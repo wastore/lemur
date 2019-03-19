@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/lemur/dmplugin"
-	"github.com/intel-hpdd/lemur/dmplugin/dmio"
+	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/edwardsp/lemur/dmplugin/dmio"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/pborman/uuid"
 )

@@ -7,7 +7,7 @@ package steps
 import (
 	"fmt"
 
-	"github.com/intel-hpdd/lemur/uat/harness"
+	"github.com/edwardsp/lemur/uat/harness"
 )
 
 func init() {

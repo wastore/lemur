@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/config"
+	"github.com/edwardsp/lemur/cmd/lhsmd/config"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"

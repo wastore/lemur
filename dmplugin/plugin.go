@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	pb "github.com/intel-hpdd/lemur/pdm"
-	"github.com/intel-hpdd/lemur/pkg/fsroot"
+	pb "github.com/edwardsp/lemur/pdm"
+	"github.com/edwardsp/lemur/pkg/fsroot"
 	"google.golang.org/grpc"
 )
 

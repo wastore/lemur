@@ -6,7 +6,7 @@ import (
 	"os"
 
 	lustre "github.com/intel-hpdd/go-lustre"
-	"github.com/intel-hpdd/lemur/dmplugin"
+	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/pkg/errors"
 )
 

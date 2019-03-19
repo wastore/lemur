@@ -19,8 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent"
-	defaults "github.com/intel-hpdd/lemur/cmd/lhsmd/config"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent"
+	defaults "github.com/edwardsp/lemur/cmd/lhsmd/config"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/intel-hpdd/go-lustre/fs/spec"

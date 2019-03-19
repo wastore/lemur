@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/config"
+	"github.com/edwardsp/lemur/cmd/lhsmd/config"
 	"github.com/intel-hpdd/go-lustre/fs/spec"
 )
 

@@ -17,7 +17,7 @@ import (
 	"github.com/intel-hpdd/go-lustre/hsm"
 	"github.com/intel-hpdd/go-lustre/llapi"
 	"github.com/intel-hpdd/go-lustre/status"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent/fileid"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 )

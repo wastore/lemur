@@ -11,9 +11,9 @@ import (
 	"github.com/DATA-DOG/godog/gherkin"
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/config"
-	"github.com/intel-hpdd/lemur/uat/harness"
-	"github.com/intel-hpdd/lemur/uat/steps"
+	"github.com/edwardsp/lemur/cmd/lhsmd/config"
+	"github.com/edwardsp/lemur/uat/harness"
+	"github.com/edwardsp/lemur/uat/steps"
 	"github.com/intel-hpdd/logging/alert"
 )
 

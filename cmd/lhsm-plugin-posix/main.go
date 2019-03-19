@@ -12,11 +12,11 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsm-plugin-posix/posix"
-	"github.com/intel-hpdd/lemur/dmplugin"
-	"github.com/intel-hpdd/lemur/pkg/fsroot"
-	"github.com/intel-hpdd/logging/alert"
-	"github.com/intel-hpdd/logging/debug"
+	"github.com/edwardsp/lemur/cmd/lhsm-plugin-posix/posix"
+	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/edwardsp/lemur/pkg/fsroot"
+	"github.com/edwardsp/logging/alert"
+	"github.com/edwardsp/logging/debug"
 )
 
 type (
@@ -89,6 +89,8 @@ func getMergedConfig(plugin *dmplugin.Plugin) (*posixConfig, error) {
 }
 
 func main() {
+	debug.Printf("Starting main...\n")
+
 	plugin, err := dmplugin.New(path.Base(os.Args[0]), func(path string) (fsroot.Client, error) {
 		return fsroot.New(path)
 	})

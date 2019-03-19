@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent"
-	_ "github.com/intel-hpdd/lemur/cmd/lhsmd/transport/grpc"
-	"github.com/intel-hpdd/lemur/pkg/fsroot"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent"
+	_ "github.com/edwardsp/lemur/cmd/lhsmd/transport/grpc"
+	"github.com/edwardsp/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/go-lustre/hsm"
 
 	"golang.org/x/net/context"

@@ -10,11 +10,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsm-plugin-posix/posix"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/config"
-	"github.com/intel-hpdd/lemur/dmplugin"
-	"github.com/intel-hpdd/lemur/internal/testhelpers"
-	"github.com/intel-hpdd/lemur/pkg/fsroot"
+	"github.com/edwardsp/lemur/cmd/lhsm-plugin-posix/posix"
+	"github.com/edwardsp/lemur/cmd/lhsmd/config"
+	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/edwardsp/lemur/internal/testhelpers"
+	"github.com/edwardsp/lemur/pkg/fsroot"
 )
 
 func TestPosixLoadConfig(t *testing.T) {

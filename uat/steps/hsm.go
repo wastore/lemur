@@ -9,7 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/lemur/uat/harness"
+	"github.com/edwardsp/lemur/uat/harness"
 	"github.com/intel-hpdd/logging/debug"
 )
 

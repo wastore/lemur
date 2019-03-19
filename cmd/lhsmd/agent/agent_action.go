@@ -13,8 +13,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent/fileid"
-	pb "github.com/intel-hpdd/lemur/pdm"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
+	pb "github.com/edwardsp/lemur/pdm"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"

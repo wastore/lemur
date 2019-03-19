@@ -22,12 +22,12 @@ import (
 	"github.com/intel-hpdd/go-lustre/fs"
 	"github.com/intel-hpdd/go-lustre/hsm"
 	"github.com/intel-hpdd/go-lustre/llapi"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent/fileid"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/config"
-	_ "github.com/intel-hpdd/lemur/cmd/lhsmd/transport/grpc"
-	"github.com/intel-hpdd/lemur/dmplugin"
-	"github.com/intel-hpdd/lemur/pkg/fsroot"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
+	"github.com/edwardsp/lemur/cmd/lhsmd/config"
+	_ "github.com/edwardsp/lemur/cmd/lhsmd/transport/grpc"
+	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/edwardsp/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/debug"
 )
 

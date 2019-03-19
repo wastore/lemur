@@ -15,7 +15,7 @@ import (
 
 	"github.com/intel-hpdd/go-lustre/hsm"
 	"github.com/intel-hpdd/go-lustre/llapi"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/agent/fileid"
+	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/pkg/errors"
 	cli "gopkg.in/urfave/cli.v1"

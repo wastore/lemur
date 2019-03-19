@@ -14,10 +14,10 @@ import (
 	"github.com/pkg/errors"
 
 	lustre "github.com/intel-hpdd/go-lustre"
-	"github.com/intel-hpdd/lemur/cmd/lhsm-plugin-posix/posix"
-	"github.com/intel-hpdd/lemur/dmplugin"
-	"github.com/intel-hpdd/lemur/internal/testhelpers"
-	"github.com/intel-hpdd/lemur/pkg/checksum"
+	"github.com/edwardsp/lemur/cmd/lhsm-plugin-posix/posix"
+	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/edwardsp/lemur/internal/testhelpers"
+	"github.com/edwardsp/lemur/pkg/checksum"
 	"github.com/intel-hpdd/logging/debug"
 )
 

@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/intel-hpdd/lemur/cmd/lhsmd/config"
-	"github.com/intel-hpdd/lemur/dmplugin"
-	"github.com/intel-hpdd/lemur/internal/testhelpers"
-	"github.com/intel-hpdd/lemur/pkg/fsroot"
+	"github.com/edwardsp/lemur/cmd/lhsmd/config"
+	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/edwardsp/lemur/internal/testhelpers"
+	"github.com/edwardsp/lemur/pkg/fsroot"
 )
 
 func TestS3LoadConfig(t *testing.T) {
