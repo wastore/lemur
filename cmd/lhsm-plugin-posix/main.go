@@ -15,8 +15,8 @@ import (
 	"github.com/edwardsp/lemur/cmd/lhsm-plugin-posix/posix"
 	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/edwardsp/lemur/pkg/fsroot"
-	"github.com/edwardsp/logging/alert"
-	"github.com/edwardsp/logging/debug"
+	"github.com/intel-hpdd/logging/alert"
+	"github.com/intel-hpdd/logging/debug"
 )
 
 type (
