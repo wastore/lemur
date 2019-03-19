@@ -30,23 +30,23 @@ type (
 	archiveConfig struct {
 		Name               string `hcl:",key"`
 		ID                 int
-		AzAccessKeyID      string `hcl:"aws_access_key_id"`
-		AzSecretAccessKey  string `hcl:"aws_secret_access_key"`
+		AzStorageAccount   string `hcl:"az_storage_account"`
+		AzStorageKey       string `hcl:"az_storage_key"`
 		Endpoint           string
 		Region             string
 		Container          string
 		Prefix             string
 		UploadPartSize     int64 `hcl:"upload_part_size"`
 
-		azCreds *SharedKeyCredential
+		azCreds *azblob.SharedKeyCredential
 	}
 
 	archiveSet []*archiveConfig
 
 	azConfig struct {
 		NumThreads         int        `hcl:"num_threads"`
-		AzAccessKeyID      string     `hcl:"aws_access_key_id"`
-		AzSecretAccessKey  string     `hcl:"aws_secret_access_key"`
+		AzStorageAccount   string     `hcl:"az_storage_account"`
+		AzStorageKey       string     `hcl:"az_storage_key"`
 		Endpoint           string     `hcl:"endpoint"`
 		Region             string     `hcl:"region"`
 		UploadPartSize     int64      `hcl:"upload_part_size"`
@@ -134,7 +134,8 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 
 	// If these were set on a per-archive basis, override the defaults.
 	if a.AzStorageAccount != "" && a.AzStorageKey != "" {
-		a.azCreds, err = azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
+		creds, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
+        a.azCreds = creds
 	}
 }
 
@@ -202,7 +203,7 @@ func init() {
 	// }
 }
 
-func s3Svc(ac *archiveConfig) *pipeline.Pipeline {
+func s3Svc(ac *archiveConfig) *azblob.SharedKeyCredential {
     creds, err := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
     return creds
 }

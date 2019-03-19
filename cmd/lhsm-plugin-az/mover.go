@@ -21,12 +21,12 @@ import (
 // Mover is an az data mover
 type Mover struct {
 	name  string
-	az    *pipeline.Pipeline
+	az    *azblob.SharedKeyCredential
 	cfg   *archiveConfig
 }
 
 // AzMover returns a new *Mover
-func AzMover(cfg *archiveConfig, az *pipeline.Pipeline, archiveID uint32) *Mover {
+func AzMover(cfg *archiveConfig, az *azblob.SharedKeyCredential, archiveID uint32) *Mover {
 	return &Mover{
 		name:  fmt.Sprintf("az-%d", archiveID),
 		az:    az,
@@ -65,11 +65,12 @@ func (m *Mover) newDownloader() *s3manager.Downloader {
 }
 */
 
-/*
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
 	debug.Printf("%s started", m.name)
 }
+
+/*
 func (m *Mover) fileIDtoBucketPath(fileID string) (string, string, error) {
 	var bucket, path string
 
