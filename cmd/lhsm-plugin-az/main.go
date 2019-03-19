@@ -134,7 +134,7 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 
 	// If these were set on a per-archive basis, override the defaults.
 	if a.AzStorageAccount != "" && a.AzStorageKey != "" {
-		creds, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
+		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
         a.azCreds = creds
 	}
 }
@@ -204,7 +204,7 @@ func init() {
 }
 
 func s3Svc(ac *archiveConfig) *azblob.SharedKeyCredential {
-    creds, err := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
+    creds, _ := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
     return creds
 }
 

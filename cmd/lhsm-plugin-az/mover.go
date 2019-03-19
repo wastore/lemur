@@ -6,16 +6,16 @@ package main
 
 import (
 	"fmt"
-	"net/url"
-	"path"
-	"time"
+//	"net/url"
+//	"path"
+//	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/edwardsp/lemur/dmplugin"
-	"github.com/edwardsp/lemur/dmplugin/dmio"
+//	"github.com/edwardsp/lemur/dmplugin/dmio"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/pborman/uuid"
+//	"github.com/pborman/uuid"
 )
 
 // Mover is an az data mover
