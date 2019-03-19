@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Azure/azure-storage-blob-go/azbob"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"

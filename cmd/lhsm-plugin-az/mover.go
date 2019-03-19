@@ -10,7 +10,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/Azure/azure-storage-blob-go/azbob"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/edwardsp/lemur/dmplugin/dmio"
