@@ -210,7 +210,7 @@ func s3Svc(ac *archiveConfig) *pipeline.Pipeline {
 func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
 	baseCfg := &azConfig{
 		Region:         "westeurope",
-		UploadPartSize: 8388608
+		UploadPartSize: 8388608,
 	}
 
 	var cfg azConfig
