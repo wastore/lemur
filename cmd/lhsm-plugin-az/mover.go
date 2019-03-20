@@ -5,48 +5,47 @@
 package main
 
 import (
+    "context"
 	"fmt"
-//	"net/url"
-//	"path"
-//	"time"
+	"net/url"
+	"path"
+	"time"
+
+    "github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/edwardsp/lemur/dmplugin"
-//	"github.com/edwardsp/lemur/dmplugin/dmio"
+	"github.com/edwardsp/lemur/dmplugin/dmio"
 	"github.com/intel-hpdd/logging/debug"
-//	"github.com/pborman/uuid"
+	"github.com/pborman/uuid"
 )
 
 // Mover is an az data mover
 type Mover struct {
 	name  string
-	az    *azblob.SharedKeyCredential
+	creds *azblob.SharedKeyCredential
 	cfg   *archiveConfig
 }
 
 // AzMover returns a new *Mover
-func AzMover(cfg *archiveConfig, az *azblob.SharedKeyCredential, archiveID uint32) *Mover {
+func AzMover(cfg *archiveConfig, creds *azblob.SharedKeyCredential, archiveID uint32) *Mover {
 	return &Mover{
 		name:  fmt.Sprintf("az-%d", archiveID),
-		az:    az,
+		creds: creds,
 		cfg:   cfg,
 	}
 }
 
-/*
 func newFileID() string {
 	return uuid.New()
 }
-*/
 
-/*
 func (m *Mover) destination(id string) string {
 	return path.Join(m.cfg.Prefix,
 		"o",
 		id)
 }
-*/
 
 /*
 func (m *Mover) newUploader() *s3manager.Uploader {
@@ -93,8 +92,7 @@ func (m *Mover) fileIDtoBucketPath(fileID string) (string, string, error) {
 // Archive fulfills an HSM Archive request
 func (m *Mover) Archive(action dmplugin.Action) error {
 	debug.Printf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
-    /*
-	rate.Mark(1)
+    rate.Mark(1)
 	start := time.Now()
 
 	fileID := newFileID()
@@ -112,28 +110,30 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	progressReader := dmio.NewProgressReader(rdr, updateInterval, progressFunc)
 	defer progressReader.StopUpdates()
 
-	uploader := m.newUploader()
-	out, err := uploader.Upload(&s3manager.UploadInput{
-		Body:        progressReader,
-		Bucket:      aws.String(m.cfg.Bucket),
-		Key:         aws.String(fileKey),
-		ContentType: aws.String("application/octet-stream"),
-	})
+    p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
+    cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
+    containerURL := azblob.NewContainerURL(*cURL, p)
+    ctx := context.Background()
+    blobURL := containerURL.NewBlockBlobURL(fileKey)
+    _, err = blobURL.Upload(ctx,
+        progressReader,
+        azblob.BlobHTTPHeaders{
+            ContentType:        "text/html; charset=utf-8",
+            ContentDisposition: "attachment",
+        }, azblob.Metadata{}, azblob.BlobAccessConditions{
+    })
 	if err != nil {
-		if multierr, ok := err.(s3manager.MultiUploadFailure); ok {
-			return errors.Errorf("Upload error on %s: %s (%s)", multierr.UploadID(), multierr.Code(), multierr.Message())
-		}
 		return errors.Wrap(err, "upload failed")
 	}
 
-	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s", m.name, action.ID(), total,
+	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
-		out.Location)
+		cURL, fileKey)
 
 	u := url.URL{
-		Scheme: "s3",
-		Host:   m.cfg.Bucket,
+		Scheme: "az",
+		Host:   cURL.String(),
 		Path:   fileKey,
 	}
 
@@ -141,8 +141,6 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	action.SetURL(u.String())
 	action.SetActualLength(total)
 	return nil
-    */
-    return nil
 }
 
 // Restore fulfills an HSM Restore request
