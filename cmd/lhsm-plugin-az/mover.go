@@ -95,8 +95,16 @@ func (m *Mover) Archive(action dmplugin.Action) error {
     rate.Mark(1)
 	start := time.Now()
 
-	fileID := action.PrimaryPath() //newFileID()
+	fileID := newFileID()
 	fileKey := m.destination(fileID)
+
+    debug.Printf("Action:\n  WritePath=%s\n  UUID=%s\n  Hash=%s\n  URL=%s",
+		action.WritePath(),
+		action.UUID(),
+		action.Hash(),
+		action.URL())
+
+
 
 	rdr, total, err := dmio.NewActionReader(action)
 	if err != nil {
