@@ -8,6 +8,7 @@ import (
     "context"
 	"fmt"
 	"net/url"
+    "os"
 	"path"
 	"time"
 
@@ -69,25 +70,23 @@ func (m *Mover) Start() {
 	debug.Printf("%s started", m.name)
 }
 
-/*
-func (m *Mover) fileIDtoBucketPath(fileID string) (string, string, error) {
-	var bucket, path string
+func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
+	var container, path string
 
 	u, err := url.ParseRequestURI(fileID)
 	if err == nil {
-		if u.Scheme != "s3" {
+		if u.Scheme != "az" {
 			return "", "", errors.Errorf("invalid URL in file_id %s", fileID)
 		}
 		path = u.Path
-		bucket = u.Host
+		container = u.Host
 	} else {
 		path = m.destination(fileID)
-		bucket = m.cfg.Bucket
+		container = m.cfg.Container
 	}
-	debug.Printf("Parsed %s -> %s/%s", fileID, bucket, path)
-	return bucket, path, nil
+	debug.Printf("Parsed %s -> %s/%s", fileID, container, path)
+	return container, path, nil
 }
-*/
 
 // Archive fulfills an HSM Archive request
 func (m *Mover) Archive(action dmplugin.Action) error {
@@ -97,14 +96,6 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	fileID := newFileID()
 	fileKey := m.destination(fileID)
-
-    debug.Printf("Action:\n  WritePath=%s\n  UUID=%s\n  Hash=%s\n  URL=%s",
-		action.WritePath(),
-		action.UUID(),
-		action.Hash(),
-		action.URL())
-
-
 
 	rdr, total, err := dmio.NewActionReader(action)
 	if err != nil {
@@ -154,28 +145,31 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 // Restore fulfills an HSM Restore request
 func (m *Mover) Restore(action dmplugin.Action) error {
 	debug.Printf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
-    /*
 	rate.Mark(1)
 
 	start := time.Now()
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
-	bucket, srcObj, err := m.fileIDtoBucketPath(action.UUID())
+	container, srcObj, err := m.fileIDtoContainerPath(action.UUID())
 	if err != nil {
-		return errors.Wrap(err, "fileIDtoBucketPath failed")
+		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
-	out, err := m.s3Svc.HeadObject(&s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(srcObj),
-	})
 
+    p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
+    cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
+    containerURL := azblob.NewContainerURL(*cURL, p)
+    ctx := context.Background()
+    blobURL := containerURL.NewBlobURL(srcObj)
+
+    blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
 	if err != nil {
-		return errors.Wrapf(err, "s3.HeadObject() on %s failed", srcObj)
+		return errors.Wrapf(err, "GetProperties on %s failed", srcObj)
 	}
-	debug.Printf("obj %s, size %d", srcObj, *out.ContentLength)
+    contentLen := blobProp.ContentLength()
+	debug.Printf("obj %s, size %d", srcObj, contentLen)
 
-	dstSize := *out.ContentLength
+	dstSize := contentLen
 	dst, err := dmio.NewActionWriter(action)
 	if err != nil {
 		return errors.Wrapf(err, "Couldn't create ActionWriter for %s", action)
@@ -188,22 +182,23 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	progressWriter := dmio.NewProgressWriterAt(dst, updateInterval, progressFunc)
 	defer progressWriter.StopUpdates()
 
-	downloader := m.newDownloader()
-	n, err := downloader.Download(progressWriter,
-		&s3.GetObjectInput{
-			Bucket: aws.String(m.cfg.Bucket),
-			Key:    aws.String(srcObj),
-		})
+    file, _ := os.Create(action.PrimaryPath())
+    err = azblob.DownloadBlobToFile(
+        ctx, blobURL, 0, 0, file,
+        azblob.DownloadFromBlobOptions{
+            BlockSize: m.cfg.UploadPartSize,
+            Parallelism: 1,
+        })
+
 	if err != nil {
-		return errors.Errorf("s3.Download() of %s failed: %s", srcObj, err)
+		return errors.Errorf("az.Download() of %s failed: %s", srcObj, err)
 	}
 
-	debug.Printf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), n,
+	debug.Printf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
 		srcObj,
 		action.PrimaryPath())
-	action.SetActualLength(n)
-	*/
+	action.SetActualLength(contentLen)
     return nil
 }
 
@@ -216,7 +211,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return errors.New("Missing file_id")
 	}
 
-	bucket, srcObj, err := m.fileIDtoBucketPath(string(action.UUID()))
+	bucket, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
 
 	_, err = m.s3Svc.DeleteObject(&s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
