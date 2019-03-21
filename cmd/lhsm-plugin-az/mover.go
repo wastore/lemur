@@ -77,7 +77,7 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 		if u.Scheme != "az" {
 			return "", "", errors.Errorf("invalid URL in file_id %s", fileID)
 		}
-		path = u.Path
+		path = u.Path[1:]
 		container = u.Host
 	} else {
 		path = m.destination(fileID)
