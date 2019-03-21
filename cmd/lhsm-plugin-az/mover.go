@@ -103,7 +103,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
     blobURL := containerURL.NewBlockBlobURL(fileKey)
 
     debug.Printf("\naction.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.PrimaryPath())
-    file, _ := os.Create(action.PrimaryPath())
+    file, _ := os.Open(action.PrimaryPath())
     defer file.Close()
 
     _, err := azblob.UploadFileToBlockBlob(
