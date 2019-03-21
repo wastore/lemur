@@ -17,7 +17,6 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/edwardsp/lemur/dmplugin"
-	"github.com/edwardsp/lemur/dmplugin/dmio"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/pborman/uuid"
 )
@@ -97,35 +96,29 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileID := newFileID()
 	fileKey := m.destination(fileID)
 
-	rdr, total, err := dmio.NewActionReader(action)
-	if err != nil {
-		return errors.Wrapf(err, "Could not create archive reader for %s", action)
-	}
-	defer rdr.Close()
-
-	progressFunc := func(offset, length int64) error {
-		return action.Update(offset, length, total)
-	}
-	progressReader := dmio.NewProgressReader(rdr, updateInterval, progressFunc)
-	defer progressReader.StopUpdates()
-
     p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
     cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
     containerURL := azblob.NewContainerURL(*cURL, p)
     ctx := context.Background()
     blobURL := containerURL.NewBlockBlobURL(fileKey)
-    _, err = blobURL.Upload(ctx,
-        progressReader,
-        azblob.BlobHTTPHeaders{
-            ContentType:        "text/html; charset=utf-8",
-            ContentDisposition: "attachment",
-        }, azblob.Metadata{}, azblob.BlobAccessConditions{
-    })
+
+    debug.Printf("\naction.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.PrimaryPath())
+    file, _ := os.Create(action.PrimaryPath())
+    defer file.Close()
+
+    _, err := azblob.UploadFileToBlockBlob(
+        ctx,
+        file,
+        blobURL,
+        azblob.UploadToBlockBlobOptions{
+		    BlockSize:   m.cfg.UploadPartSize,
+		    Parallelism: uint16(m.cfg.NumThreads),
+        })
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
 	}
 
-	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
+	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), action.Length(),
 		time.Since(start),
 		action.PrimaryPath(),
 		cURL, fileKey)
@@ -138,7 +131,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	action.SetUUID(fileID)
 	action.SetURL(u.String())
-	action.SetActualLength(total)
+	action.SetActualLength(action.Length())
 	return nil
 }
 
@@ -168,28 +161,15 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	}
     contentLen := blobProp.ContentLength()
 	debug.Printf("obj %s, size %d", srcObj, contentLen)
-/*
-	dstSize := contentLen
-	dst, err := dmio.NewActionWriter(action)
-	if err != nil {
-		return errors.Wrapf(err, "Couldn't create ActionWriter for %s", action)
-	}
-	defer dst.Close()
 
-	progressFunc := func(offset, length int64) error {
-		return action.Update(offset, length, dstSize)
-	}
-	progressWriter := dmio.NewProgressWriterAt(dst, updateInterval, progressFunc)
-	defer progressWriter.StopUpdates()
-*/
-    debug.Printf("action.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.WritePath())
+    debug.Printf("\naction.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.WritePath())
     file, _ := os.Create(action.WritePath())
     defer file.Close()
     err = azblob.DownloadBlobToFile(
         ctx, blobURL, 0, 0, file,
         azblob.DownloadFromBlobOptions{
             BlockSize: m.cfg.UploadPartSize,
-            Parallelism: 1,
+            Parallelism: uint16(m.cfg.NumThreads),
         })
 
 	if err != nil {
@@ -207,19 +187,21 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 // Remove fulfills an HSM Remove request
 func (m *Mover) Remove(action dmplugin.Action) error {
 	debug.Printf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
-	/*
     rate.Mark(1)
 	if action.UUID() == "" {
 		return errors.New("Missing file_id")
 	}
 
-	bucket, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
+	container, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
 
-	_, err = m.s3Svc.DeleteObject(&s3.DeleteObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(srcObj),
-	})
+    p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
+    cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
+    containerURL := azblob.NewContainerURL(*cURL, p)
+    ctx := context.Background()
+    blobURL := containerURL.NewBlobURL(srcObj)
+	_, err = blobURL.Delete(ctx,
+        "",
+        azblob.BlobAccessConditions{})
 	return errors.Wrap(err, "delete object failed")
-    */
     return nil
 }

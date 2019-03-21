@@ -36,7 +36,8 @@ type (
 		Region             string
 		Container          string
 		Prefix             string
-		UploadPartSize     int64 `hcl:"upload_part_size"`
+		UploadPartSize     int64  `hcl:"upload_part_size"`
+		NumThreads         int    `hcl:"num_threads"`
 
 		azCreds *azblob.SharedKeyCredential
 	}
