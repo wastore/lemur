@@ -84,7 +84,7 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 		path = m.destination(fileID)
 		container = m.cfg.Container
 	}
-	debug.Printf("Parsed %s -> %s/%s", fileID, container, path)
+	debug.Printf("Parsed %s -> %s / %s", fileID, container, path)
 	return container, path, nil
 }
 
@@ -168,7 +168,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	}
     contentLen := blobProp.ContentLength()
 	debug.Printf("obj %s, size %d", srcObj, contentLen)
-
+/*
 	dstSize := contentLen
 	dst, err := dmio.NewActionWriter(action)
 	if err != nil {
@@ -181,8 +181,9 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	}
 	progressWriter := dmio.NewProgressWriterAt(dst, updateInterval, progressFunc)
 	defer progressWriter.StopUpdates()
-
+*/
     file, _ := os.Create(action.PrimaryPath())
+    defer file.Close()
     err = azblob.DownloadBlobToFile(
         ctx, blobURL, 0, 0, file,
         azblob.DownloadFromBlobOptions{
