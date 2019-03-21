@@ -182,7 +182,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	progressWriter := dmio.NewProgressWriterAt(dst, updateInterval, progressFunc)
 	defer progressWriter.StopUpdates()
 */
-    file, _ := os.Create(action.PrimaryPath())
+    debug.Printf("action.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.WritePath())
+    file, _ := os.Create(action.WritePath())
     defer file.Close()
     err = azblob.DownloadBlobToFile(
         ctx, blobURL, 0, 0, file,
