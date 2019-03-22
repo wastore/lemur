@@ -98,7 +98,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileID := newFileID()
 	fileKey := m.destination(fileID)
 
-    fid := lustre.ParseFid(action.UUID())
+    fid, _ := lustre.ParseFid(action.UUID())
     rootDir, _ := fs.MountRoot(action.PrimaryPath())
     names, _ := status.FidPathnames(rootDir, fid)
     debug.Printf("FILENAME: %s",names[0])
