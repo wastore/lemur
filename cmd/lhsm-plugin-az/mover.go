@@ -99,7 +99,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileKey := m.destination(fileID)
 
     fid := lustre.ParseFid(action.UUID())
-    names := status.FidPathnames(action.PrimaryPath(), fid)
+    rootDir, _ := fs.MountRoot(action.PrimaryPath())
+    names, _ := status.FidPathnames(rootDir, fid)
     debug.Printf("FILENAME: %s",names[0])
 
     p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
