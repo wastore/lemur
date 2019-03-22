@@ -105,7 +105,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
     debug.Printf("lustre.ParseFid(action.UUID()=%s)", action.UUID())
     debug.Printf("fs.MountRoot(action.PrimaryPath()=%s)", action.PrimaryPath())
     for i, name := range names {
-        debug.Printf("    FILENAME: [%d] %s", i, names[i])
+        debug.Printf("    FILENAME: [%d] %s", i, name)
     }
 
     p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
