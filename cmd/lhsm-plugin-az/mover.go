@@ -131,7 +131,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	action.SetUUID(fileID)
 	action.SetURL(u.String())
-	action.SetActualLength(fi.Size())
+	action.SetActualLength(fileinfo.Size())
 	return nil
 }
 
