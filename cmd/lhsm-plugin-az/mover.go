@@ -15,9 +15,6 @@ import (
     "github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-    "github.com/intel-hpdd/go-lustre"
-    "github.com/intel-hpdd/go-lustre/fs"
-    "github.com/intel-hpdd/go-lustre/status"
 
 	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/intel-hpdd/logging/debug"
@@ -99,23 +96,14 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileID := newFileID()
 	fileKey := m.destination(fileID)
 
-    fid, _ := lustre.ParseFid(action.UUID())
-    rootDir, _ := fs.MountRoot(action.PrimaryPath())
-    names, _ := status.FidPathnames(rootDir, fid)
-    debug.Printf("lustre.ParseFid(action.UUID()=%s)", action.UUID())
-    debug.Printf("fs.MountRoot(action.PrimaryPath()=%s)", action.PrimaryPath())
-    for i, name := range names {
-        debug.Printf("    FILENAME: [%d] %s", i, name)
-    }
-
     p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
     cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
     containerURL := azblob.NewContainerURL(*cURL, p)
     ctx := context.Background()
     blobURL := containerURL.NewBlockBlobURL(fileKey)
 
-    debug.Printf("\naction.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.PrimaryPath())
     file, _ := os.Open(action.PrimaryPath())
+    fileinfo, _ := file.Stat()
     defer file.Close()
 
     _, err := azblob.UploadFileToBlockBlob(
@@ -130,7 +118,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return errors.Wrap(err, "upload failed")
 	}
 
-	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), action.Length(),
+	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), fileinfo.Size(),
 		time.Since(start),
 		action.PrimaryPath(),
 		cURL, fileKey)
@@ -143,7 +131,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	action.SetUUID(fileID)
 	action.SetURL(u.String())
-	action.SetActualLength(action.Length())
+	action.SetActualLength(fi.Size())
 	return nil
 }
 
@@ -172,9 +160,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrapf(err, "GetProperties on %s failed", srcObj)
 	}
     contentLen := blobProp.ContentLength()
-	debug.Printf("obj %s, size %d", srcObj, contentLen)
 
-    debug.Printf("\naction.PrimaryPath() = %s\naction.WritePath() = %s", action.PrimaryPath(), action.WritePath())
     file, _ := os.Create(action.WritePath())
     defer file.Close()
     err = azblob.DownloadBlobToFile(
