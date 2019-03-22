@@ -15,9 +15,9 @@ import (
     "github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-    "github.com/whamcloud/go-lustre"
-    "github.com/whamcloud/go-lustre/fs"
-    "github.com/whamcloud/go-lustre/status"
+    "github.com/intel-hpdd/go-lustre"
+    "github.com/intel-hpdd/go-lustre/fs"
+    "github.com/intel-hpdd/go-lustre/status"
 
 	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/intel-hpdd/logging/debug"
