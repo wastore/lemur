@@ -15,6 +15,8 @@ import (
     "github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+    "github.com/whamcloud/go-lustre"
+    "github.com/whamcloud/go-lustre/status"
 
 	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/intel-hpdd/logging/debug"
@@ -95,6 +97,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	fileID := newFileID()
 	fileKey := m.destination(fileID)
+
+    fid := lustre.ParseFid(action.UUID())
+    names := status.FidPathnames(action.PrimaryPath(), fid)
+    debug.Printf("FILENAME: %s",names[0])
 
     p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
     cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
