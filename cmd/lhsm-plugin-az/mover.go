@@ -102,7 +102,11 @@ func (m *Mover) Archive(action dmplugin.Action) error {
     fid, _ := lustre.ParseFid(action.UUID())
     rootDir, _ := fs.MountRoot(action.PrimaryPath())
     names, _ := status.FidPathnames(rootDir, fid)
-    debug.Printf("FILENAME: %s",names[0])
+    debug.Printf("lustre.ParseFid(action.UUID()=%s)", action.UUID())
+    debug.Printf("fs.MountRoot(action.PrimaryPath()=%s)", action.PrimaryPath())
+    for i, name := range names {
+        debug.Printf("    FILENAME: [%d] %s", i, names[i])
+    }
 
     p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
     cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
