@@ -46,9 +46,7 @@ func newFileID() string {
 }
 
 func (m *Mover) destination(id string) string {
-	return path.Join(m.cfg.Prefix,
-		"o",
-		id)
+	return path.Join(m.cfg.Prefix, id)
 }
 
 /*
