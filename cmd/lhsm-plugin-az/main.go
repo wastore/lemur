@@ -28,16 +28,16 @@ import (
 
 type (
 	archiveConfig struct {
-		Name               string `hcl:",key"`
-		ID                 int
-		AzStorageAccount   string `hcl:"az_storage_account"`
-		AzStorageKey       string `hcl:"az_storage_key"`
-		Endpoint           string
-		Region             string
-		Container          string
-		Prefix             string
-		UploadPartSize     int64  `hcl:"upload_part_size"`
-		NumThreads         int    `hcl:"num_threads"`
+		Name             string `hcl:",key"`
+		ID               int
+		AzStorageAccount string `hcl:"az_storage_account"`
+		AzStorageKey     string `hcl:"az_storage_key"`
+		Endpoint         string
+		Region           string
+		Container        string
+		Prefix           string
+		UploadPartSize   int64 `hcl:"upload_part_size"`
+		NumThreads       int   `hcl:"num_threads"`
 
 		azCreds *azblob.SharedKeyCredential
 	}
@@ -45,13 +45,13 @@ type (
 	archiveSet []*archiveConfig
 
 	azConfig struct {
-		NumThreads         int        `hcl:"num_threads"`
-		AzStorageAccount   string     `hcl:"az_storage_account"`
-		AzStorageKey       string     `hcl:"az_storage_key"`
-		Endpoint           string     `hcl:"endpoint"`
-		Region             string     `hcl:"region"`
-		UploadPartSize     int64      `hcl:"upload_part_size"`
-		Archives           archiveSet `hcl:"archive"`
+		NumThreads       int        `hcl:"num_threads"`
+		AzStorageAccount string     `hcl:"az_storage_account"`
+		AzStorageKey     string     `hcl:"az_storage_key"`
+		Endpoint         string     `hcl:"endpoint"`
+		Region           string     `hcl:"region"`
+		UploadPartSize   int64      `hcl:"upload_part_size"`
+		Archives         archiveSet `hcl:"archive"`
 	}
 )
 
@@ -80,11 +80,11 @@ func (a *archiveConfig) checkValid() error {
 
 	}
 
-    /*
-	if a.UploadPartSize < s3manager.MinUploadPartSize {
-		errors = append(errors, fmt.Sprintf("Archive %s: upload_part_size %d is less than minimum (%d)", a.Name, a.UploadPartSize, s3manager.MinUploadPartSize))
-	}
-    */
+	/*
+		if a.UploadPartSize < s3manager.MinUploadPartSize {
+			errors = append(errors, fmt.Sprintf("Archive %s: upload_part_size %d is less than minimum (%d)", a.Name, a.UploadPartSize, s3manager.MinUploadPartSize))
+		}
+	*/
 	if len(errors) > 0 {
 		return fmt.Errorf("Errors: %s", strings.Join(errors, ", "))
 	}
@@ -97,13 +97,13 @@ func (a *archiveConfig) checkAzAccess() error {
 		return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
 	}
 
-    /*
-	if _, err := s3Svc(a).ListObjects(&s3.ListObjectsInput{
-		Container: aws.String(a.Container),
-	}); err != nil {
-		return errors.Wrap(err, "Unable to list S3 Container objects")
-	}
-    */
+	/*
+		if _, err := s3Svc(a).ListObjects(&s3.ListObjectsInput{
+			Container: aws.String(a.Container),
+		}); err != nil {
+			return errors.Wrap(err, "Unable to list S3 Container objects")
+		}
+	*/
 	return nil
 }
 
@@ -136,7 +136,7 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	// If these were set on a per-archive basis, override the defaults.
 	if a.AzStorageAccount != "" && a.AzStorageKey != "" {
 		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
-        a.azCreds = creds
+		a.azCreds = creds
 	}
 }
 
@@ -205,8 +205,8 @@ func init() {
 }
 
 func s3Svc(ac *archiveConfig) *azblob.SharedKeyCredential {
-    creds, _ := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
-    return creds
+	creds, _ := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
+	return creds
 }
 
 func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {

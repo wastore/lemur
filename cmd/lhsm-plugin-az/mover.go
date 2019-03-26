@@ -5,16 +5,20 @@
 package main
 
 import (
-    "context"
+	"context"
 	"fmt"
 	"net/url"
-    "os"
+	"os"
 	"path"
+	"strings"
 	"time"
 
-    "github.com/pkg/errors"
+	"github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/intel-hpdd/go-lustre"
+	"github.com/intel-hpdd/go-lustre/fs"
+	"github.com/intel-hpdd/go-lustre/status"
 
 	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/intel-hpdd/logging/debug"
@@ -90,30 +94,48 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 // Archive fulfills an HSM Archive request
 func (m *Mover) Archive(action dmplugin.Action) error {
 	debug.Printf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
-    rate.Mark(1)
+	rate.Mark(1)
 	start := time.Now()
 
-	fileID := newFileID()
+	fid_str := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
+	fid, err := lustre.ParseFid(fid_str)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse fid")
+	}
+	rootDir, err := fs.MountRoot("/mnt/lustre/agent")
+	if err != nil {
+		return errors.Wrap(err, "failed to find root dir")
+	}
+	fnames, err := status.FidPathnames(rootDir, fid)
+	if err != nil {
+		return errors.Wrap(err, "failed to get pathname")
+	}
+	debug.Printf("Path(s) on FS: %s", strings.Join(fnames, ", "))
+
+	if len(fnames) > 1 {
+		debug.Printf("WARNING: multiple paths returned, using first")
+	}
+	fileID := fnames[0]
 	fileKey := m.destination(fileID)
 
-    p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
-    cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
-    containerURL := azblob.NewContainerURL(*cURL, p)
-    ctx := context.Background()
-    blobURL := containerURL.NewBlockBlobURL(fileKey)
+	p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
+	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
+	containerURL := azblob.NewContainerURL(*cURL, p)
+	ctx := context.Background()
+	blobURL := containerURL.NewBlockBlobURL(fileKey)
 
-    file, _ := os.Open(action.PrimaryPath())
-    fileinfo, _ := file.Stat()
-    defer file.Close()
+	file, _ := os.Open(action.PrimaryPath())
+	fileinfo, _ := file.Stat()
+	defer file.Close()
 
-    _, err := azblob.UploadFileToBlockBlob(
-        ctx,
-        file,
-        blobURL,
-        azblob.UploadToBlockBlobOptions{
-		    BlockSize:   m.cfg.UploadPartSize,
-		    Parallelism: uint16(m.cfg.NumThreads),
-        })
+	_, err = azblob.UploadFileToBlockBlob(
+		ctx,
+		file,
+		blobURL,
+		azblob.UploadToBlockBlobOptions{
+			BlockSize:   m.cfg.UploadPartSize,
+			Parallelism: uint16(m.cfg.NumThreads),
+		})
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
 	}
@@ -149,26 +171,26 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
-    p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
-    cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
-    containerURL := azblob.NewContainerURL(*cURL, p)
-    ctx := context.Background()
-    blobURL := containerURL.NewBlobURL(srcObj)
+	p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
+	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
+	containerURL := azblob.NewContainerURL(*cURL, p)
+	ctx := context.Background()
+	blobURL := containerURL.NewBlobURL(srcObj)
 
-    blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
+	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
 	if err != nil {
 		return errors.Wrapf(err, "GetProperties on %s failed", srcObj)
 	}
-    contentLen := blobProp.ContentLength()
+	contentLen := blobProp.ContentLength()
 
-    file, _ := os.Create(action.WritePath())
-    defer file.Close()
-    err = azblob.DownloadBlobToFile(
-        ctx, blobURL, 0, 0, file,
-        azblob.DownloadFromBlobOptions{
-            BlockSize: m.cfg.UploadPartSize,
-            Parallelism: uint16(m.cfg.NumThreads),
-        })
+	file, _ := os.Create(action.WritePath())
+	defer file.Close()
+	err = azblob.DownloadBlobToFile(
+		ctx, blobURL, 0, 0, file,
+		azblob.DownloadFromBlobOptions{
+			BlockSize:   m.cfg.UploadPartSize,
+			Parallelism: uint16(m.cfg.NumThreads),
+		})
 
 	if err != nil {
 		return errors.Errorf("az.Download() of %s failed: %s", srcObj, err)
@@ -179,27 +201,27 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		srcObj,
 		action.PrimaryPath())
 	action.SetActualLength(contentLen)
-    return nil
+	return nil
 }
 
 // Remove fulfills an HSM Remove request
 func (m *Mover) Remove(action dmplugin.Action) error {
 	debug.Printf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
-    rate.Mark(1)
+	rate.Mark(1)
 	if action.UUID() == "" {
 		return errors.New("Missing file_id")
 	}
 
 	container, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
 
-    p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
-    cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
-    containerURL := azblob.NewContainerURL(*cURL, p)
-    ctx := context.Background()
-    blobURL := containerURL.NewBlobURL(srcObj)
+	p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
+	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
+	containerURL := azblob.NewContainerURL(*cURL, p)
+	ctx := context.Background()
+	blobURL := containerURL.NewBlobURL(srcObj)
 	_, err = blobURL.Delete(ctx,
-        "",
-        azblob.BlobAccessConditions{})
+		"",
+		azblob.BlobAccessConditions{})
 	return errors.Wrap(err, "delete object failed")
-    return nil
+	return nil
 }
