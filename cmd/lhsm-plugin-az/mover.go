@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/intel-hpdd/go-lustre"
 	"github.com/intel-hpdd/go-lustre/fs"
 	"github.com/intel-hpdd/go-lustre/status"
