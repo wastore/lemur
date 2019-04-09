@@ -126,19 +126,25 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileinfo, _ := file.Stat()
 	defer file.Close()
 
+    total := fileinfo.Size()
+    progressFunc := func(length int64) error {
+        return action.Update(0, length, total)
+    }
+
 	_, err = azblob.UploadFileToBlockBlob(
 		ctx,
 		file,
 		blobURL,
 		azblob.UploadToBlockBlobOptions{
-			BlockSize:   m.cfg.UploadPartSize,
+			Progress:    progressFunc,
+            BlockSize:   m.cfg.UploadPartSize,
 			Parallelism: uint16(m.cfg.NumThreads),
 		})
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
 	}
 
-	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), fileinfo.Size(),
+	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
 		cURL, fileKey)
@@ -151,7 +157,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	action.SetUUID(fileID)
 	action.SetURL(u.String())
-	action.SetActualLength(fileinfo.Size())
+	action.SetActualLength(total)
 	return nil
 }
 
