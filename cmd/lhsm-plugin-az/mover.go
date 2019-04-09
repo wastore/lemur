@@ -128,7 +128,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	defer file.Close()
 
     total := fileinfo.Size()
-    progressFunc := func(length int64) error {
+    progressFunc := func(length int64) {
         return action.Update(0, length, total)
     }
 
