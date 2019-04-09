@@ -136,9 +136,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		file,
 		blobURL,
 		azblob.UploadToBlockBlobOptions{
-			Progress:    func(length int64) error {
-                return action.Update(0, length, total)
-            },
+			Progress:    pipeline.ProgressReceiver(progressFunc),
             BlockSize:   m.cfg.UploadPartSize,
 			Parallelism: uint16(m.cfg.NumThreads),
 		})
