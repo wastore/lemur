@@ -129,7 +129,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
     total := fileinfo.Size()
     progressFunc := func(length int64) {
-        return action.Update(0, length, total)
+        action.Update(0, length, total)
     }
 
 	_, err = azblob.UploadFileToBlockBlob(
