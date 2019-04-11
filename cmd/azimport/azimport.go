@@ -60,7 +60,7 @@ func main() {
 					fmt.Printf("mkdir -p %s\n", dir)
 				}
 			}
-			fmt.Printf("sudo lhsm import --uid \"az://%s/%s\" --uid %d --gid %d -id %d --size %d %s\n",
+			fmt.Printf("sudo lhsm import --uuid \"az://%s/%s\" --uid %d --gid %d -id %d --size %d %s\n",
 				containerName, blobInfo.Name, 1000, 1000, 3, blobInfo.Properties.ContentLength, blobInfo.Name)
 		}
 	}
