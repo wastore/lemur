@@ -16,7 +16,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/intel-hpdd/go-lustre"
 	"github.com/intel-hpdd/go-lustre/fs"
 	"github.com/intel-hpdd/go-lustre/status"
@@ -127,18 +126,14 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileinfo, _ := file.Stat()
 	defer file.Close()
 
-    total := fileinfo.Size()
-    progressFunc := func(length int64) {
-        action.Update(0, length, total)
-    }
+	total := fileinfo.Size()
 
 	_, err = azblob.UploadFileToBlockBlob(
 		ctx,
 		file,
 		blobURL,
 		azblob.UploadToBlockBlobOptions{
-			Progress:    pipeline.ProgressReceiver(progressFunc),
-            BlockSize:   m.cfg.UploadPartSize,
+			BlockSize:   m.cfg.UploadPartSize,
 			Parallelism: uint16(m.cfg.NumThreads),
 		})
 	if err != nil {
