@@ -132,7 +132,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	defer file.Close()
 
 	total := fileinfo.Size()
-	meta := Metadata{}
+	meta := azblob.Metadata{}
 
 	meta["Perm"] = fmt.Sprintf("%o", fileinfo.Mode)
 	meta["ModTime"] = fileInfo.ModTime().String()
