@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
@@ -60,8 +62,34 @@ func main() {
 					fmt.Printf("mkdir -p %s\n", dir)
 				}
 			}
-			fmt.Printf("sudo lhsm import --uuid \"az://%s/%s\" --uid %d --gid %d -id %d --size %d %s\n",
-				containerName, blobInfo.Name, 1000, 1000, 1, *blobInfo.Properties.ContentLength, blobInfo.Name)
+
+			uid := 1000
+			if val, ok := blobInfo.Metadata["Uid"]; ok {
+				val2, err := strconv.ParseInt(val, 10, 32)
+				if err == nil {
+					uid = int(val2)
+				}
+			}
+			gid := 1000
+			if val, ok := blobInfo.Metadata["Uid"]; ok {
+				val2, err := strconv.ParseInt(val, 10, 32)
+				if err == nil {
+					gid = int(val2)
+				}
+			}
+			perm := 420
+			if val, ok := blobInfo.Metadata["Perm"]; ok {
+				val2, err := strconv.ParseInt(val, 8, 32)
+				if err == nil {
+					perm = int(val2)
+				}
+			}
+			modtime := time.Now().String()
+			if val, ok := blobInfo.Metadata["ModTime"]; ok {
+				modtime = val
+			}
+			fmt.Printf("sudo lhsm import --uuid \"az://%s/%s\" --mtime \"%s\" --mode %d --uid %d --gid %d -id %d --size %d %s\n",
+				containerName, blobInfo.Name, modtime, perm, uid, gid, 1, *blobInfo.Properties.ContentLength, blobInfo.Name)
 		}
 	}
 

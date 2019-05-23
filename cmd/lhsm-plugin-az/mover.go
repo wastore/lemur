@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -131,6 +132,12 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	defer file.Close()
 
 	total := fileinfo.Size()
+	meta := Metadata{}
+	
+	meta["Perm"] = fmt.Sprintf("%o", fileinfo.Mode)
+	meta["ModTime"] = fileInfo.ModTime().String()
+	meta["Uid"] = fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
+	meta["Gid"] = fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 
 	_, err = azblob.UploadFileToBlockBlob(
 		ctx,
@@ -139,6 +146,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		azblob.UploadToBlockBlobOptions{
 			BlockSize:   m.cfg.UploadPartSize,
 			Parallelism: uint16(m.cfg.NumThreads),
+			Metadata: meta
 		})
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
