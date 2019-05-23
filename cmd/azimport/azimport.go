@@ -33,7 +33,7 @@ func main() {
 	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
 
 	URL, _ := url.Parse(
-		fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, containerName))
+		fmt.Sprintf("https://%s.blob.core.windows.net/%s?include=metadata", accountName, containerName))
 
 	// Create a ContainerURL object that wraps the container URL and a request
 	// pipeline to make requests.
