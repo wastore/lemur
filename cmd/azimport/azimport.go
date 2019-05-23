@@ -63,6 +63,7 @@ func main() {
 				}
 			}
 
+			fmt.Println(blobInfo)
 			uid := 1000
 			if val, ok := blobInfo.Metadata["Uid"]; ok {
 				val2, err := strconv.ParseInt(val, 10, 32)
