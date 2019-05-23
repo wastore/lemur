@@ -135,9 +135,9 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	meta := azblob.Metadata{}
 
 	meta["Perm"] = fmt.Sprintf("%o", fileinfo.Mode)
-	meta["ModTime"] = fileInfo.ModTime().String()
-	meta["Uid"] = fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
-	meta["Gid"] = fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
+	meta["ModTime"] = fileinfo.ModTime().String()
+	meta["Uid"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Uid)
+	meta["Gid"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Gid)
 
 	_, err = azblob.UploadFileToBlockBlob(
 		ctx,
