@@ -133,7 +133,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	total := fileinfo.Size()
 	meta := Metadata{}
-	
+
 	meta["Perm"] = fmt.Sprintf("%o", fileinfo.Mode)
 	meta["ModTime"] = fileInfo.ModTime().String()
 	meta["Uid"] = fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
@@ -146,7 +146,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		azblob.UploadToBlockBlobOptions{
 			BlockSize:   m.cfg.UploadPartSize,
 			Parallelism: uint16(m.cfg.NumThreads),
-			Metadata: meta
+			Metadata:    meta,
 		})
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
