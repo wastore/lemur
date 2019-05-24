@@ -85,7 +85,7 @@ func main() {
 				}
 			}
 			modtime := time.Now().Format("2006-01-02 15:04:05 -0700")
-			if val, ok := blobInfoFormat("modtime"]; ok {
+			if val, ok := blobInfo.Metadata["modtime"]; ok {
 				_, err := time.Parse("2006-01-02 15:04:05 -0700", val)
 				if err == nil {
 					modtime = val
