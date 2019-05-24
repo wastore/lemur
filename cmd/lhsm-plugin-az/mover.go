@@ -135,7 +135,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	meta := azblob.Metadata{}
 
 	meta["Perm"] = fmt.Sprintf("%o", fileinfo.Mode())
-	meta["ModTime"] = fileinfo.ModTime().String()
+	meta["ModTime"] = fileinfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 	meta["Uid"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Uid)
 	meta["Gid"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Gid)
 

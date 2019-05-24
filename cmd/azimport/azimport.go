@@ -63,33 +63,35 @@ func main() {
 				}
 			}
 
-			fmt.Println(blobInfo)
 			uid := 1000
-			if val, ok := blobInfo.Metadata["Uid"]; ok {
+			if val, ok := blobInfo.Metadata["uid"]; ok {
 				val2, err := strconv.ParseInt(val, 10, 32)
 				if err == nil {
 					uid = int(val2)
 				}
 			}
 			gid := 1000
-			if val, ok := blobInfo.Metadata["Uid"]; ok {
+			if val, ok := blobInfo.Metadata["gid"]; ok {
 				val2, err := strconv.ParseInt(val, 10, 32)
 				if err == nil {
 					gid = int(val2)
 				}
 			}
 			perm := 420
-			if val, ok := blobInfo.Metadata["Perm"]; ok {
+			if val, ok := blobInfo.Metadata["perm"]; ok {
 				val2, err := strconv.ParseInt(val, 8, 32)
 				if err == nil {
 					perm = int(val2)
 				}
 			}
 			modtime := time.Now().String()
-			if val, ok := blobInfo.Metadata["ModTime"]; ok {
-				modtime = val
+			if val, ok := blobInfo.Metadata["modtime"]; ok {
+				_, err := time.Parse("2006-01-02 15:04:05 -0700", val)
+				if err == nil {
+					modtime = val
+				}
 			}
-			fmt.Printf("sudo lhsm import --uuid \"az://%s/%s\" --mtime \"%s\" --mode %d --uid %d --gid %d -id %d --size %d %s\n",
+			fmt.Printf("sudo lhsm import --uuid \"az://%s/%s\" --timefmt \"2006-01-02 15:04:05 -0700\" --mtime \"%s\" --mode %d --uid %d --gid %d -id %d --size %d %s\n",
 				containerName, blobInfo.Name, modtime, perm, uid, gid, 1, *blobInfo.Properties.ContentLength, blobInfo.Name)
 		}
 	}
