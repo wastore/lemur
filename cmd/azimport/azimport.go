@@ -91,7 +91,7 @@ func main() {
 					modtime = val
 				}
 			}
-			fmt.Printf("sudo lhsm import --uuid \"az://%s/%s\" --timefmt \"2006-01-02 15:04:05 -0700\" --mtime \"%s\" --mode %d --uid %d --gid %d -id %d --size %d %s\n",
+			fmt.Printf("lhsm import --uuid \"az://%s/%s\" --timefmt \"2006-01-02 15:04:05 -0700\" --mtime \"%s\" --mode %d --uid %d --gid %d -id %d --size %d %s\n",
 				containerName, blobInfo.Name, modtime, perm, uid, gid, 1, *blobInfo.Properties.ContentLength, blobInfo.Name)
 		}
 	}

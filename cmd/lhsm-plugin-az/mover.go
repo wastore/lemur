@@ -54,23 +54,6 @@ func (m *Mover) destination(id string) string {
 	}
 }
 
-/*
-func (m *Mover) newUploader() *s3manager.Uploader {
-	// can configure stuff here with custom setters
-	var partSize = func(u *s3manager.Uploader) {
-		u.PartSize = m.cfg.UploadPartSize
-	}
-	return s3manager.NewUploaderWithClient(m.s3Svc, partSize)
-
-}
-*/
-
-/*
-func (m *Mover) newDownloader() *s3manager.Downloader {
-	return s3manager.NewDownloaderWithClient(m.s3Svc)
-}
-*/
-
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
 	debug.Printf("%s started", m.name)
