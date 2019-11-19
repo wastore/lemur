@@ -88,7 +88,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to parse fid")
 	}
-	rootDir, err := fs.MountRoot("/mnt/lustre/agent")
+	rootDir, err := fs.MountRoot("/mnt/lhsmd/agent")
 	if err != nil {
 		return errors.Wrap(err, "failed to find root dir")
 	}
