@@ -1,42 +1,35 @@
-[![GoDoc](https://godoc.org/github.com/edwardsp/lemur/dmplugin?status.svg)](https://godoc.org/github.com/edwardsp/lemur/dmplugin)
+# Azure HSM Agent and Data Movers for Lustre
 
-# HPDD HSM Agent and Data Movers for Lustre
+This has been updated for Azure to provide a copy tool back to BLOB storage.
 
-Lemur is new, open source implementation of HSM tools for the [Lustre Filesystem](http://lustre.org) based on this
-[design](https://wiki.hpdd.intel.com/display/PUB/HSM+Agent+Design). This project
-is developed by the Intel High Performance Data Division, one of the main
-contributors to the Lustre Filesystem. We welcome community involvement and
-contributions. If you would like to raise an issue or file a bug, please use the
-LMR project on our community [Jira
-server](https://jira.hpdd.intel.com/browse/LMR) instead of Github issues.
+RPMS are available here for this initial version:
 
+__Lustre 2.10__
 
-## Build
+* https://azurehpc.azureedge.net/rpms/lemur-azure-hsm-agent-1.0.0-lustre_2.10.x86_64.rpm
+* https://azurehpc.azureedge.net/rpms/lemur-azure-data-movers-1.0.0-lustre_2.10.x86_64.rpm
 
-We use Docker for building packages, so as long as you have Docker running,
-`make rpm` will take care of everything needed to create a clean build
-environment and build a set of Lemur RPMs. The results will be stored in
-`./output/RPMS`.
+__Lustre 2.12__
 
-For development and testing, it is generally more convenient to use a Linux host
-(or virtual machine) with Lustre installed. We recommend RHEL or CentOS 7.x,
-Lustre 2.7 or above, and at least Go 1.6.
+* https://azurehpc.azureedge.net/rpms/lemur-azure-hsm-agent-1.0.0-lustre_2.12.x86_64.rpm
+* https://azurehpc.azureedge.net/rpms/lemur-azure-data-movers-1.0.0-lustre_2.12.x86_64.rpm
 
 
-## Testing Quickstart
+## Building
 
-The unit tests are run with `make test` and do not require a Lustre environment
-to be configured.
+Commands used to build RPMS:
 
-The user acceptance test (UAT) automates basic testing with the agent and
-datamovers. The harness does not manage Lustre filesystems -- you will need to
-create one and mount a client somewhere, and ensue the Coordinator is enabled on
-the MDT. The harness must run as root, because the agent must also run as root in
-order to fiddle with secure xattrs and do other root-y stuff.
+```
+wget https://dl.google.com/go/go1.12.1.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.12.1.linux-amd64.tar.gz
+export PATH=/usr/local/go/bin:$PATH
+sudo yum install -y git gcc rpmdevtools rpmlint
 
+git clone https://github.com/edwardsp/lemur.git
+cd lemur
+go mod init
+go mod vendor
+make local-rpm
+```
 
-1. `make rpm`
-1. Copy built RPMs to Lustre client host and install them
-1. `sudo /usr/libexec/lemur-testing/lemur-uat-runner`
-
-Set [uat/README.md](uat/README.md) for more details on running and confgiuring the user acceptance tests.
+> Note: Lustre 2.12 has an API change in the HSM so the go-lustre needs patching.  Change the `int` to `enum_changelog_rec_flages`.
