@@ -1,4 +1,4 @@
-[![GoDoc](https://godoc.org/github.com/intel-hpdd/lemur/dmplugin?status.svg)](https://godoc.org/github.com/intel-hpdd/lemur/dmplugin)
+[![GoDoc](https://godoc.org/github.com/edwardsp/lemur/dmplugin?status.svg)](https://godoc.org/github.com/edwardsp/lemur/dmplugin)
 
 # HPDD HSM Agent and Data Movers for Lustre
 

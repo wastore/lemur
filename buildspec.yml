@@ -10,7 +10,7 @@ phases:
       - echo Pre-build started on `date`
       - rm -fr $TOPDIR
       - mkdir -p $TOPDIR/{RPMS/{x86_64,noarch},SRPMS,BUILD,BUILDROOT,SPECS,SOURCES}
-      - mkdir -p $GOPATH/src/github.com/intel-hpdd/lemur && cp -a . $_ && cd $_ && rm -fr vendor/github.com/intel-hpdd/logging/debug/examples && rm -fr uat && go get -v ./... && go get -v github.com/fortytw2/leaktest && go test -v $(go list ./... | egrep -v '(*vendor/*|*uat/*)' )
+      - mkdir -p $GOPATH/src/github.com/edwardsp/lemur && cp -a . $_ && cd $_ && rm -fr vendor/github.com/edwardsp/logging/debug/examples && go get -v ./... && go get -v github.com/fortytw2/leaktest' )
   build:
     commands:
       - echo Build started on `date`
