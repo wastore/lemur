@@ -117,10 +117,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	total := fileinfo.Size()
 	meta := azblob.Metadata{}
 
-	meta["Perm"] = fmt.Sprintf("%o", fileinfo.Mode())
+	meta["Permissions"] = fmt.Sprintf("%o", fileinfo.Mode())
 	meta["ModTime"] = fileinfo.ModTime().Format("2006-01-02 15:04:05 -0700")
-	meta["Uid"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Uid)
-	meta["Gid"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Gid)
+	meta["Owner"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Uid)
+	meta["Group"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Gid)
 
 	_, err = azblob.UploadFileToBlockBlob(
 		ctx,
@@ -195,6 +195,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		time.Since(start),
 		srcObj,
 		action.PrimaryPath())
+
+	// TODO should we fetch the permissions/owner/group and persist them?
 	action.SetActualLength(contentLen)
 	return nil
 }
