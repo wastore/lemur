@@ -12,7 +12,7 @@ import (
 
 	"github.com/hashicorp/hcl"
 	"github.com/pkg/errors"
-	"github.com/edwardsp/lemur/cmd/lhsmd/config"
+	"github.com/wastore/lemur/cmd/lhsmd/config"
 	"github.com/intel-hpdd/logging/alert"
 )
 

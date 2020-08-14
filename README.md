@@ -25,7 +25,7 @@ sudo tar -C /usr/local -xzf go1.12.1.linux-amd64.tar.gz
 export PATH=/usr/local/go/bin:$PATH
 sudo yum install -y git gcc rpmdevtools rpmlint
 
-git clone https://github.com/edwardsp/lemur.git
+git clone https://github.com/wastore/lemur.git
 cd lemur
 go mod init
 go mod vendor

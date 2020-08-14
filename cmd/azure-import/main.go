@@ -12,9 +12,9 @@ import (
     "syscall"
 	"time"
 
-    "github.com/intel-hpdd/go-lustre/hsm"
-	"github.com/intel-hpdd/go-lustre/llapi"
-	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
+    "github.com/wastore/go-lustre/hsm"
+	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 

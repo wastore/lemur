@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/intel-hpdd/go-lustre"
-	"github.com/edwardsp/lemur/dmplugin"
+	"github.com/wastore/go-lustre"
+	"github.com/wastore/lemur/dmplugin"
 	"github.com/pkg/errors"
 )
 

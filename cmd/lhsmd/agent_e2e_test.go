@@ -18,16 +18,16 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/intel-hpdd/go-lustre"
-	"github.com/intel-hpdd/go-lustre/fs"
-	"github.com/intel-hpdd/go-lustre/hsm"
-	"github.com/intel-hpdd/go-lustre/llapi"
-	"github.com/edwardsp/lemur/cmd/lhsmd/agent"
-	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
-	"github.com/edwardsp/lemur/cmd/lhsmd/config"
-	_ "github.com/edwardsp/lemur/cmd/lhsmd/transport/grpc"
-	"github.com/edwardsp/lemur/dmplugin"
-	"github.com/edwardsp/lemur/pkg/fsroot"
+	"github.com/wastore/go-lustre"
+	"github.com/wastore/go-lustre/fs"
+	"github.com/wastore/go-lustre/hsm"
+	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/lemur/cmd/lhsmd/agent"
+	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
+	"github.com/wastore/lemur/cmd/lhsmd/config"
+	_ "github.com/wastore/lemur/cmd/lhsmd/transport/grpc"
+	"github.com/wastore/lemur/dmplugin"
+	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/debug"
 )
 

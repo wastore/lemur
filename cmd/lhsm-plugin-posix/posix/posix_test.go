@@ -13,11 +13,11 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/pkg/errors"
 
-	lustre "github.com/intel-hpdd/go-lustre"
-	"github.com/edwardsp/lemur/cmd/lhsm-plugin-posix/posix"
-	"github.com/edwardsp/lemur/dmplugin"
-	"github.com/edwardsp/lemur/internal/testhelpers"
-	"github.com/edwardsp/lemur/pkg/checksum"
+	lustre "github.com/wastore/go-lustre"
+	"github.com/wastore/lemur/cmd/lhsm-plugin-posix/posix"
+	"github.com/wastore/lemur/dmplugin"
+	"github.com/wastore/lemur/internal/testhelpers"
+	"github.com/wastore/lemur/pkg/checksum"
 	"github.com/intel-hpdd/logging/debug"
 )
 

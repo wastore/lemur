@@ -12,7 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	pb "github.com/edwardsp/lemur/pdm"
+	pb "github.com/wastore/lemur/pdm"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 	"golang.org/x/net/context"

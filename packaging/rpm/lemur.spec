@@ -37,14 +37,14 @@ mover fulfills data movement requests on behalf of the HSM Agent.
 %setup -n %{pkg_prefix}-%{version}
 # ohhh myyyy...
 cd ..
-mkdir -p src/github.com/edwardsp
-mv %{pkg_prefix}-%{version} src/github.com/edwardsp/%{pkg_prefix}
+mkdir -p src/github.com/wastore
+mv %{pkg_prefix}-%{version} src/github.com/wastore/%{pkg_prefix}
 mkdir %{pkg_prefix}-%{version}
 mv src %{pkg_prefix}-%{version}
 
 %install
 export GOPATH=$PWD:$GOPATH
-cd src/github.com/edwardsp/%{pkg_prefix}
+cd src/github.com/wastore/%{pkg_prefix}
 %{__make} install PREFIX=%{buildroot}/%{_prefix}
 %{__make} install-example PREFIX=%{buildroot}/
 

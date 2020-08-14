@@ -7,23 +7,22 @@ package main
 import (
 	"context"
 	"fmt"
+	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"net/url"
-	"os"
 	"path"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/intel-hpdd/go-lustre"
-	"github.com/intel-hpdd/go-lustre/fs"
-	"github.com/intel-hpdd/go-lustre/status"
+	"github.com/wastore/go-lustre"
+	"github.com/wastore/go-lustre/fs"
+	"github.com/wastore/go-lustre/status"
 
-	"github.com/edwardsp/lemur/dmplugin"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/pborman/uuid"
+	"github.com/wastore/lemur/dmplugin"
 )
 
 // Mover is an az data mover
@@ -83,8 +82,9 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	rate.Mark(1)
 	start := time.Now()
 
-	fid_str := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
-	fid, err := lustre.ParseFid(fid_str)
+	// translate the fid into an actual path first
+	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
+	fid, err := lustre.ParseFid(fidStr)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse fid")
 	}
@@ -104,33 +104,16 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
 
-	p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
-	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container))
-	containerURL := azblob.NewContainerURL(*cURL, p)
-	ctx := context.Background()
-	blobURL := containerURL.NewBlockBlobURL(fileKey)
+	total, err := core.Archive(core.ArchiveOptions{
+		AccountName:   m.cfg.AzStorageAccount,
+		ContainerName: m.cfg.Container,
+		BlobName:      fileKey,
+		Credential:    m.creds,
+		SourcePath:    action.PrimaryPath(),
+		Parallelism:   uint16(m.cfg.NumThreads),
+		BlockSize:     m.cfg.UploadPartSize,
+	})
 
-	file, _ := os.Open(action.PrimaryPath())
-	fileinfo, _ := file.Stat()
-	defer file.Close()
-
-	total := fileinfo.Size()
-	meta := azblob.Metadata{}
-
-	meta["Permissions"] = fmt.Sprintf("%o", fileinfo.Mode())
-	meta["ModTime"] = fileinfo.ModTime().Format("2006-01-02 15:04:05 -0700")
-	meta["Owner"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Uid)
-	meta["Group"] = fmt.Sprintf("%d", fileinfo.Sys().(*syscall.Stat_t).Gid)
-
-	_, err = azblob.UploadFileToBlockBlob(
-		ctx,
-		file,
-		blobURL,
-		azblob.UploadToBlockBlobOptions{
-			BlockSize:   m.cfg.UploadPartSize,
-			Parallelism: uint16(m.cfg.NumThreads),
-			Metadata:    meta,
-		})
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
 	}
@@ -138,11 +121,11 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
-		cURL, fileKey)
+		m.cfg.Container, fileKey)
 
 	u := url.URL{
 		Scheme: "az",
-		Host:   cURL.String(),
+		Host:   fmt.Sprintf("%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container),
 		Path:   fileKey,
 	}
 
@@ -166,26 +149,15 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
-	p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
-	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
-	containerURL := azblob.NewContainerURL(*cURL, p)
-	ctx := context.Background()
-	blobURL := containerURL.NewBlobURL(srcObj)
-
-	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
-	if err != nil {
-		return errors.Wrapf(err, "GetProperties on %s failed", srcObj)
-	}
-	contentLen := blobProp.ContentLength()
-
-	file, _ := os.Create(action.WritePath())
-	defer file.Close()
-	err = azblob.DownloadBlobToFile(
-		ctx, blobURL, 0, 0, file,
-		azblob.DownloadFromBlobOptions{
-			BlockSize:   m.cfg.UploadPartSize,
-			Parallelism: uint16(m.cfg.NumThreads),
-		})
+	contentLen, err := core.Restore(core.RestoreOptions{
+		AccountName: m.cfg.AzStorageAccount,
+		ContainerName: container,
+		BlobName: srcObj,
+		Credential: m.creds,
+		DestinationPath: action.WritePath(),
+		Parallelism: uint16(m.cfg.NumThreads),
+		BlockSize: m.cfg.UploadPartSize,
+	})
 
 	if err != nil {
 		return errors.Errorf("az.Download() of %s failed: %s", srcObj, err)
@@ -196,7 +168,6 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		srcObj,
 		action.PrimaryPath())
 
-	// TODO should we fetch the permissions/owner/group and persist them?
 	action.SetActualLength(contentLen)
 	return nil
 }

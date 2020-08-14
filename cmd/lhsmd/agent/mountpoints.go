@@ -16,7 +16,7 @@ import (
 
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/intel-hpdd/go-lustre/pkg/mntent"
+	"github.com/wastore/go-lustre/pkg/mntent"
 )
 
 // UnmountTimeout is the time, in seconds, that an unmount will be retried

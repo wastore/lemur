@@ -5,7 +5,7 @@
 package dmplugin
 
 import (
-	lustre "github.com/intel-hpdd/go-lustre"
+	lustre "github.com/wastore/go-lustre"
 	"github.com/intel-hpdd/logging/alert"
 )
 

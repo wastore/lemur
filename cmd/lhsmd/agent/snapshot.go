@@ -12,12 +12,12 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/intel-hpdd/go-lustre"
-	"github.com/intel-hpdd/go-lustre/fs"
-	"github.com/intel-hpdd/go-lustre/hsm"
-	"github.com/intel-hpdd/go-lustre/llapi"
-	"github.com/intel-hpdd/go-lustre/status"
-	"github.com/edwardsp/lemur/cmd/lhsmd/agent/fileid"
+	"github.com/wastore/go-lustre"
+	"github.com/wastore/go-lustre/fs"
+	"github.com/wastore/go-lustre/hsm"
+	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/go-lustre/status"
+	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 )

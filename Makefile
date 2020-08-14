@@ -7,7 +7,7 @@ VERSION := $(shell git describe --tags --always --dirty | tr '-' '_')
 BUILDDATE := $(shell date -u +"%B %d, %Y")
 GOVERSION := $(shell go version)
 PKG_RELEASE ?= 1
-PROJECT_URL := "https://github.com/edwardsp/$(NAME)"
+PROJECT_URL := "https://github.com/wastore/$(NAME)"
 LDFLAGS := -X 'main.version=$(VERSION)'
 
 CMD_SOURCES := $(shell find cmd -name main.go)

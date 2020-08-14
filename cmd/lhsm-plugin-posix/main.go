@@ -12,9 +12,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/edwardsp/lemur/cmd/lhsm-plugin-posix/posix"
-	"github.com/edwardsp/lemur/dmplugin"
-	"github.com/edwardsp/lemur/pkg/fsroot"
+	"github.com/wastore/lemur/cmd/lhsm-plugin-posix/posix"
+	"github.com/wastore/lemur/dmplugin"
+	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 )

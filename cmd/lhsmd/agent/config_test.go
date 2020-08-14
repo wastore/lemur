@@ -12,8 +12,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/edwardsp/lemur/cmd/lhsmd/config"
-	"github.com/intel-hpdd/go-lustre/fs/spec"
+	"github.com/wastore/lemur/cmd/lhsmd/config"
+	"github.com/wastore/go-lustre/fs/spec"
 )
 
 func TestConfiguredPlugins(t *testing.T) {

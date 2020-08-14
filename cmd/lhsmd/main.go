@@ -18,15 +18,15 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/edwardsp/lemur/cmd/lhsmd/agent"
-	"github.com/edwardsp/lemur/pkg/fsroot"
+	"github.com/wastore/lemur/cmd/lhsmd/agent"
+	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/intel-hpdd/go-lustre/hsm"
+	"github.com/wastore/go-lustre/hsm"
 
 	// Register the supported transports
-	_ "github.com/edwardsp/lemur/cmd/lhsmd/transport/grpc"
+	_ "github.com/wastore/lemur/cmd/lhsmd/transport/grpc"
 )
 
 func init() {

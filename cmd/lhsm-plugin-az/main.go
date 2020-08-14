@@ -19,8 +19,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 
-	"github.com/edwardsp/lemur/dmplugin"
-	"github.com/edwardsp/lemur/pkg/fsroot"
+	"github.com/wastore/lemur/dmplugin"
+	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"

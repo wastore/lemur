@@ -7,9 +7,9 @@ package fileid
 import (
 	"fmt"
 
-	"github.com/intel-hpdd/go-lustre"
-	"github.com/intel-hpdd/go-lustre/fs"
-	"github.com/intel-hpdd/go-lustre/pkg/xattr"
+	"github.com/wastore/go-lustre"
+	"github.com/wastore/go-lustre/fs"
+	"github.com/wastore/go-lustre/pkg/xattr"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/pkg/errors"
 )
