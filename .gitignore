@@ -4,6 +4,7 @@
 vendor
 .cache-go
 go
+dist
 
 # vim
 *.swp
