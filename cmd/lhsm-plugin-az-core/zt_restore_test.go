@@ -5,17 +5,26 @@ import (
 	chk "gopkg.in/check.v1"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
+	fileSize := 1024
+	blockSize := 2048
+	parallelism := 3
+	performRestoreTest(c, fileSize, blockSize, parallelism)
+}
+
+// test download with the source data uploaded directly to the service from memory
+// this is an independent check that download works
+func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	bsu := getBSU()
 	containerURL, containerName := createNewContainer(c, bsu)
 	defer deleteContainer(c, containerURL)
 	blobURL, blobName := createNewBlockBlob(c, containerURL, "")
 
 	// stage the source blob with small amount of data
-	_, err := blobURL.Upload(ctx, strings.NewReader(blockBlobDefaultData), azblob.BlobHTTPHeaders{},
+	reader, srcData := getRandomDataAndReader(fileSize)
+	_, err := blobURL.Upload(ctx, reader, azblob.BlobHTTPHeaders{},
 		nil, azblob.BlobAccessConditions{})
 	c.Assert(err, chk.IsNil)
 
@@ -36,18 +45,18 @@ func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
 		BlobName: blobName,
 		DestinationPath: destination,
 		Credential: credential,
-		Parallelism: 16,
-		BlockSize: 5*1024,
+		Parallelism: uint16(parallelism),
+		BlockSize: int64(blockSize),
 	})
 
 	// make sure we got the right info back
 	c.Assert(err, chk.IsNil)
-	c.Assert(count, chk.Equals, int64(len(blockBlobDefaultData)))
+	c.Assert(count, chk.Equals, int64(len(srcData)))
 
 	// Assert downloaded data is consistent
 	destBuffer :=  make([]byte, count)
 	n, err := destFile.Read(destBuffer)
 	c.Assert(err, chk.Equals, nil)
-	c.Assert(n, chk.Equals, len(blockBlobDefaultData))
-	c.Assert(string(destBuffer), chk.DeepEquals, blockBlobDefaultData)
+	c.Assert(n, chk.Equals, len(srcData))
+	c.Assert(destBuffer, chk.DeepEquals, srcData)
 }

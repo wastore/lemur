@@ -1,11 +1,6 @@
-// Copyright (c) 2018 DDN. All rights reserved.
-// Use of this source code is governed by a MIT-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
-	"context"
 	"fmt"
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"net/url"
@@ -21,33 +16,28 @@ import (
 	"github.com/wastore/go-lustre/status"
 
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/pborman/uuid"
 	"github.com/wastore/lemur/dmplugin"
 )
 
-// Mover is an az data mover
+// Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
-	name  string
-	creds *azblob.SharedKeyCredential
-	cfg   *archiveConfig
+	name   string
+	cred   *azblob.SharedKeyCredential
+	config *archiveConfig
 }
 
 // AzMover returns a new *Mover
 func AzMover(cfg *archiveConfig, creds *azblob.SharedKeyCredential, archiveID uint32) *Mover {
 	return &Mover{
-		name:  fmt.Sprintf("az-%d", archiveID),
-		creds: creds,
-		cfg:   cfg,
+		name:   fmt.Sprintf("az-%d", archiveID),
+		cred:   creds,
+		config: cfg,
 	}
 }
 
-func newFileID() string {
-	return uuid.New()
-}
-
 func (m *Mover) destination(id string) string {
-	if m.cfg.Prefix != "" {
-		return path.Join(m.cfg.Prefix, id)
+	if m.config.Prefix != "" {
+		return path.Join(m.config.Prefix, id)
 	} else {
 		return id
 	}
@@ -70,7 +60,7 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 		container = u.Host
 	} else {
 		path = m.destination(fileID)
-		container = m.cfg.Container
+		container = m.config.Container
 	}
 	debug.Printf("Parsed %s -> %s / %s", fileID, container, path)
 	return container, path, nil
@@ -105,13 +95,13 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileKey := m.destination(fileID)
 
 	total, err := core.Archive(core.ArchiveOptions{
-		AccountName:   m.cfg.AzStorageAccount,
-		ContainerName: m.cfg.Container,
+		AccountName:   m.config.AzStorageAccount,
+		ContainerName: m.config.Container,
 		BlobName:      fileKey,
-		Credential:    m.creds,
+		Credential:    m.cred,
 		SourcePath:    action.PrimaryPath(),
-		Parallelism:   uint16(m.cfg.NumThreads),
-		BlockSize:     m.cfg.UploadPartSize,
+		Parallelism:   uint16(m.config.NumThreads),
+		BlockSize:     m.config.UploadPartSize,
 	})
 
 	if err != nil {
@@ -121,11 +111,11 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
-		m.cfg.Container, fileKey)
+		m.config.Container, fileKey)
 
 	u := url.URL{
 		Scheme: "az",
-		Host:   fmt.Sprintf("%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, m.cfg.Container),
+		Host:   fmt.Sprintf("%s.blob.core.windows.net/%s", m.config.AzStorageAccount, m.config.Container),
 		Path:   fileKey,
 	}
 
@@ -150,13 +140,13 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	}
 
 	contentLen, err := core.Restore(core.RestoreOptions{
-		AccountName: m.cfg.AzStorageAccount,
+		AccountName: m.config.AzStorageAccount,
 		ContainerName: container,
 		BlobName: srcObj,
-		Credential: m.creds,
+		Credential: m.cred,
 		DestinationPath: action.WritePath(),
-		Parallelism: uint16(m.cfg.NumThreads),
-		BlockSize: m.cfg.UploadPartSize,
+		Parallelism: uint16(m.config.NumThreads),
+		BlockSize: m.config.UploadPartSize,
 	})
 
 	if err != nil {
@@ -181,15 +171,20 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	container, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
+	if err != nil {
+		return errors.Wrap(err, "fileIDtoContainerPath failed")
+	}
 
-	p := azblob.NewPipeline(m.creds, azblob.PipelineOptions{})
-	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", m.cfg.AzStorageAccount, container))
-	containerURL := azblob.NewContainerURL(*cURL, p)
-	ctx := context.Background()
-	blobURL := containerURL.NewBlobURL(srcObj)
-	_, err = blobURL.Delete(ctx,
-		"",
-		azblob.BlobAccessConditions{})
-	return errors.Wrap(err, "delete object failed")
+	err = core.Remove(core.RemoveOptions{
+		AccountName: m.config.AzStorageAccount,
+		ContainerName: container,
+		BlobName: srcObj,
+		Credential: m.cred,
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "delete object failed")
+	}
+
 	return nil
 }

@@ -7,14 +7,9 @@ import (
 	"path/filepath"
 )
 
-func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
-	fileSize := 1024
-	blockSize := 2048
-	parallelism := 3
-	performUploadAndDownloadFileTest(c, fileSize, blockSize, parallelism, 0, 0)
-}
-
-func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism, downloadOffset, downloadCount int) {
+// test upload/download with the source data uploaded to the service from a file
+// this is a round-trip test where both upload and download are exercised together
+func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	// Set up file to upload
 	fileName := generateName("", 0)
 	filePath := filepath.Join(os.TempDir(), fileName)
@@ -76,4 +71,11 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(n, chk.Equals, fileSize)
 	c.Assert(destBuffer, chk.DeepEquals, fileData)
+}
+
+func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
+	fileSize := 1024
+	blockSize := 2048
+	parallelism := 3
+	performUploadAndDownloadFileTest(c, fileSize, blockSize, parallelism)
 }

@@ -1,7 +1,3 @@
-// Copyright (c) 2018 DDN. All rights reserved.
-// Use of this source code is governed by a MIT-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
@@ -98,7 +94,7 @@ func (a *archiveConfig) checkAzAccess() error {
 	}
 
 	/*
-		if _, err := s3Svc(a).ListObjects(&s3.ListObjectsInput{
+		if _, err := getStorageSharedKeyCredential(a).ListObjects(&s3.ListObjectsInput{
 			Container: aws.String(a.Container),
 		}); err != nil {
 			return errors.Wrap(err, "Unable to list S3 Container objects")
@@ -204,7 +200,7 @@ func init() {
 	// }
 }
 
-func s3Svc(ac *archiveConfig) *azblob.SharedKeyCredential {
+func getStorageSharedKeyCredential(ac *archiveConfig) *azblob.SharedKeyCredential {
 	creds, _ := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
 	return creds
 }
@@ -272,7 +268,7 @@ func main() {
 
 	for _, ac := range cfg.Archives {
 		plugin.AddMover(&dmplugin.Config{
-			Mover:      AzMover(ac, s3Svc(ac), uint32(ac.ID)),
+			Mover:      AzMover(ac, getStorageSharedKeyCredential(ac), uint32(ac.ID)),
 			NumThreads: cfg.NumThreads,
 			ArchiveID:  uint32(ac.ID),
 		})
