@@ -1,0 +1,21 @@
+trigger:
+- master
+- dev
+- azure-piplines
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: GoTool@0
+  name: 'Set_up_Golang'
+  inputs:
+    version: '1.14'
+
+- script: |
+    echo Running tests...
+    go test -timeout 25m -race -short -cover ./cmd/lhsm-plugin-az-core
+  displayName: 'Run lhms-plugin-az-core tests'
+  env:
+    ACCOUNT_NAME: $(ACCOUNT_NAME)
+    ACCOUNT_KEY: $(ACCOUNT_KEY)
