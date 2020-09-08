@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 )
 
 type RestoreOptions struct {
@@ -74,7 +75,8 @@ func Restore(o RestoreOptions) (int64, error){
 
 	basePath := path.Dir(o.DestinationPath)
 
-	file, _ := os.Create(path.Join(basePath, paths[len(paths)-1]))
+	// We download to the destination name.
+	file, _ := os.Create(o.DestinationPath)
 	defer file.Close()
 	err = azblob.DownloadBlobToFile(
 		ctx, blobURL, 0, 0, file,
@@ -83,7 +85,8 @@ func Restore(o RestoreOptions) (int64, error){
 			Parallelism: o.Parallelism,
 		})
 
-	//paths = paths[:len(paths)-1]
+	// We symlink to the destination name.
+	paths[len(paths)-1] = strings.TrimPrefix(o.DestinationPath, basePath)
 
 	for i := len(paths) - 2; i >= 0; i-- {
 		err = os.MkdirAll(path.Join(basePath, path.Dir(paths[i])), os.ModeDir | os.ModePerm)

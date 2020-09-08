@@ -5,6 +5,7 @@ import (
 	chk "gopkg.in/check.v1"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -13,20 +14,13 @@ func performUploadAndDownloadSymlinkTest(c *chk.C, symlinkCount, fileSize, block
 	fileName := generateName("", 0)
 	dir, err := ioutil.TempDir("", "upload*")
 	c.Assert(err, chk.IsNil)
+
+	fileData := generateFile(path.Join(dir, fileName), fileSize)
+
 	// make the tmp directory and the subdirectory.
 	os.MkdirAll(filepath.Join(dir, "subdir"), os.ModeDir | os.ModePerm)
 	defer os.RemoveAll(dir)
 	filePath := filepath.Join(dir, fileName)
-
-	// create the file
-	f, err := os.Create(filePath)
-
-	c.Assert(err, chk.IsNil)
-	_, err = f.Write([]byte("Hello world!"))
-	c.Assert(err, chk.IsNil)
-
-	// close the file
-	c.Assert(f.Close(), chk.IsNil)
 
 	lastLink := filePath
 	linkName := ""
@@ -66,7 +60,7 @@ func performUploadAndDownloadSymlinkTest(c *chk.C, symlinkCount, fileSize, block
 		BlockSize: int64(blockSize),
 	})
 	c.Assert(err, chk.IsNil)
-	c.Assert(count, chk.Equals, int64(len("Hello world!")))
+	c.Assert(count, chk.Equals, int64(len(fileData)))
 
 	// Set up the downloads.
 	dlDir, err := ioutil.TempDir("", "download*")
@@ -88,7 +82,7 @@ func performUploadAndDownloadSymlinkTest(c *chk.C, symlinkCount, fileSize, block
 
 	// Assert download was successful
 	c.Assert(err, chk.Equals, nil)
-	c.Assert(count, chk.Equals, int64(len("Hello world!")))
+	c.Assert(count, chk.Equals, int64(len(fileData)))
 
 	// Assert the folder was the same, and that the file is the same.
 	parameterizeWalkFunc := func(fileMap map[string]bool, rootPath string) filepath.WalkFunc {
@@ -122,6 +116,16 @@ func performUploadAndDownloadSymlinkTest(c *chk.C, symlinkCount, fileSize, block
 			c.Fail()
 		}
 	}
+
+	destFile, err := os.Open(path.Join(dlDir, fileName))
+	c.Assert(err, chk.IsNil)
+
+	// Assert downloaded data is consistent
+	destBuffer :=  make([]byte, count)
+	n, err := destFile.Read(destBuffer)
+	c.Assert(err, chk.Equals, nil)
+	c.Assert(n, chk.Equals, fileSize)
+	c.Assert(destBuffer, chk.DeepEquals, fileData)
 }
 
 // test upload/download with the source data uploaded to the service from a file
@@ -179,7 +183,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	})
 
 	// Assert download was successful
-	c.Assert(err, chk.Equals, nil)
+	c.Assert(err, chk.IsNil)
 	c.Assert(count, chk.Equals, int64(fileSize))
 
 	// Assert downloaded data is consistent
