@@ -3,26 +3,32 @@ package lhsm_plugin_az_core
 import (
 	"context"
 	"fmt"
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/pkg/errors"
 	"net/url"
 	"os"
+
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/pkg/errors"
+	"github.com/wastore/lemur/cmd/util"
 )
 
 type RestoreOptions struct {
-	AccountName string
-	ContainerName string
-	BlobName string
+	AccountName     string
+	ContainerName   string
+	BlobName        string
 	DestinationPath string
-	Credential *azblob.SharedKeyCredential
-	Parallelism uint16
-	BlockSize int64
+	Credential      *azblob.SharedKeyCredential
+	Parallelism     uint16
+	BlockSize       int64
+	Pacer           util.Pacer
 }
 
 // persist a blob to the local filesystem
-func Restore(o RestoreOptions) (int64, error){
-	ctx := context.TODO()
-	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
+func Restore(o RestoreOptions) (int64, error) {
+	restoreCtx := context.Background()
+	ctx, cancel := context.WithCancel(restoreCtx)
+	defer cancel()
+
+	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
 	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", o.AccountName, o.ContainerName, o.BlobName))
 
 	// fetch the properties first so that we know how big the source blob is
@@ -38,7 +44,7 @@ func Restore(o RestoreOptions) (int64, error){
 	err = azblob.DownloadBlobToFile(
 		ctx, blobURL, 0, 0, file,
 		azblob.DownloadFromBlobOptions{
-			BlockSize:  o.BlockSize,
+			BlockSize:   o.BlockSize,
 			Parallelism: o.Parallelism,
 		})
 

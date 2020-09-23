@@ -15,11 +15,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 
-	"github.com/wastore/lemur/dmplugin"
-	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/lemur/dmplugin"
+	"github.com/wastore/lemur/pkg/fsroot"
 )
 
 type (
@@ -34,6 +34,7 @@ type (
 		Prefix           string
 		UploadPartSize   int64 `hcl:"upload_part_size"`
 		NumThreads       int   `hcl:"num_threads"`
+		Bandwidth        int
 
 		azCreds *azblob.SharedKeyCredential
 	}
@@ -48,6 +49,7 @@ type (
 		Region           string     `hcl:"region"`
 		UploadPartSize   int64      `hcl:"upload_part_size"`
 		Archives         archiveSet `hcl:"archive"`
+		Bandwidth        int        `hcl:"bandwidth"`
 	}
 )
 
@@ -134,6 +136,8 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
 		a.azCreds = creds
 	}
+
+	a.Bandwidth = g.Bandwidth
 }
 
 func (c *azConfig) Merge(other *azConfig) *azConfig {
@@ -172,6 +176,11 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.Archives = c.Archives
 	if len(other.Archives) > 0 {
 		result.Archives = other.Archives
+	}
+
+	result.Bandwidth = c.Bandwidth
+	if other.Bandwidth != 0 {
+		result.Bandwidth = other.Bandwidth
 	}
 
 	return result

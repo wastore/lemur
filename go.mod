@@ -3,6 +3,7 @@ module github.com/wastore/lemur
 go 1.13
 
 require (
+	github.com/Azure/azure-pipeline-go v0.2.2
 	github.com/Azure/azure-storage-azcopy v10.0.2+incompatible
 	github.com/Azure/azure-storage-blob-go v0.10.0
 	github.com/dustin/go-humanize v1.0.0
@@ -20,5 +21,6 @@ require (
 	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
 	golang.org/x/sys v0.0.0-20200812155832-6a926be9bd1d
 	google.golang.org/grpc v1.31.0
+	google.golang.org/protobuf v1.23.0
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 )

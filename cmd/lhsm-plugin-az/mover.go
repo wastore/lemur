@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
-	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"net/url"
 	"path"
 	"strings"
 	"time"
+
+	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
+	"github.com/wastore/lemur/cmd/util"
 
 	"github.com/pkg/errors"
 
@@ -72,6 +74,14 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	rate.Mark(1)
 	start := time.Now()
 
+	var pacer util.Pacer
+	/* start pacer if required */
+	if m.config.Bandwidth != 0 {
+		debug.Printf("Starting pacer with bandwidth %d\n", m.config.Bandwidth)
+		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
+		defer pacer.Close()
+	}
+
 	// translate the fid into an actual path first
 	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
 	fid, err := lustre.ParseFid(fidStr)
@@ -102,6 +112,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		SourcePath:    action.PrimaryPath(),
 		Parallelism:   uint16(m.config.NumThreads),
 		BlockSize:     m.config.UploadPartSize,
+		Pacer:         pacer,
 	})
 
 	if err != nil {
@@ -130,7 +141,14 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	debug.Printf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
 	rate.Mark(1)
 
+	var pacer util.Pacer
+
 	start := time.Now()
+	if m.config.Bandwidth != 0 {
+		debug.Printf("Starting pacer with bandwith %d MBPS\n", m.config.Bandwidth)
+		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
+		defer pacer.Close()
+	}
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
@@ -140,13 +158,14 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	}
 
 	contentLen, err := core.Restore(core.RestoreOptions{
-		AccountName: m.config.AzStorageAccount,
-		ContainerName: container,
-		BlobName: srcObj,
-		Credential: m.cred,
+		AccountName:     m.config.AzStorageAccount,
+		ContainerName:   container,
+		BlobName:        srcObj,
+		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
-		Parallelism: uint16(m.config.NumThreads),
-		BlockSize: m.config.UploadPartSize,
+		Parallelism:     uint16(m.config.NumThreads),
+		BlockSize:       m.config.UploadPartSize,
+		Pacer:           pacer,
 	})
 
 	if err != nil {
@@ -176,10 +195,10 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	err = core.Remove(core.RemoveOptions{
-		AccountName: m.config.AzStorageAccount,
+		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
-		BlobName: srcObj,
-		Credential: m.cred,
+		BlobName:      srcObj,
+		Credential:    m.cred,
 	})
 
 	if err != nil {
