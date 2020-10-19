@@ -23,10 +23,10 @@ package util
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/intel-hpdd/logging/alert"
 )
 
 func logThroughput(ctx context.Context, p Pacer) {
@@ -43,7 +43,7 @@ func logThroughput(ctx context.Context, p Pacer) {
 			timeElapsed := time.Since(intervalStartTime).Seconds()
 			if timeElapsed != 0 {
 				throughput := bytesOnWireMb / float64(timeElapsed)
-				alert.Warnf("4-sec throughput: %v MBPS\n", throughput)
+				Log(pipeline.LogInfo, fmt.Sprintf("4-sec throughput: %v MBPS\n", throughput))
 			}
 			// reset the interval timer and byte count
 			intervalStartTime = time.Now()

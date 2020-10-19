@@ -24,6 +24,8 @@ github.com/Azure/azure-storage-azcopy v10.0.2+incompatible h1:lZ0GwsP+H+aFqaiwfd
 github.com/Azure/azure-storage-azcopy v10.0.2+incompatible/go.mod h1:evHwKj3G0Zrzr3V1wbTa/vPOOSALQMfueXXffMOZfms=
 github.com/Azure/azure-storage-blob-go v0.10.0 h1:evCwGreYo3XLeBV4vSxLbLiYb6e0SzsJiXQVRGsRXxs=
 github.com/Azure/azure-storage-blob-go v0.10.0/go.mod h1:ep1edmW+kNQx4UfWM9heESNmQdijykocJ0YOxmMX8SE=
+github.com/Azure/azure-storage-blob-go v0.10.1-0.20201018150009-b04571d483cd h1:ZTorEpiIFMqredFa47Vhyk6N88Jb3UVqdKlkncEMD6g=
+github.com/Azure/azure-storage-blob-go v0.10.1-0.20201018150009-b04571d483cd/go.mod h1:ep1edmW+kNQx4UfWM9heESNmQdijykocJ0YOxmMX8SE=
 github.com/Azure/go-autorest/autorest v0.9.0 h1:MRvx8gncNaXJqOoLmhNjUAKh33JJF8LyxPhomEtOsjs=
 github.com/Azure/go-autorest/autorest v0.9.0/go.mod h1:xyHB1BMZT0cuDHU7I0+g046+BFDTQ8rEZB0s4Yfa6bI=
 github.com/Azure/go-autorest/autorest/adal v0.5.0/go.mod h1:8Z9fGy2MpX0PvDjB1pEgQTmVqjGhiHBW7RJJEciWzS0=

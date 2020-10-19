@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/go-lustre"
 	"github.com/wastore/go-lustre/fs"
@@ -47,6 +48,8 @@ func (m *Mover) destination(id string) string {
 
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
+	util.InitJobLogger(pipeline.LogInfo)
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
 	debug.Printf("%s started", m.name)
 }
 
@@ -88,7 +91,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to parse fid")
 	}
-	rootDir, err := fs.MountRoot("/mnt/lhsmd/agent")
+	rootDir, err := fs.MountRoot(m.config.MountRoot)
 	if err != nil {
 		return errors.Wrap(err, "failed to find root dir")
 	}
@@ -113,6 +116,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		Parallelism:   uint16(m.config.NumThreads),
 		BlockSize:     m.config.UploadPartSize,
 		Pacer:         pacer,
+		ExportPrefix:  m.config.ExportPrefix,
 	})
 
 	if err != nil {

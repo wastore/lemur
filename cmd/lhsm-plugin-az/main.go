@@ -32,11 +32,12 @@ type (
 		Region           string
 		Container        string
 		Prefix           string
-		UploadPartSize   int64 `hcl:"upload_part_size"`
-		NumThreads       int   `hcl:"num_threads"`
-		Bandwidth        int
-
-		azCreds *azblob.SharedKeyCredential
+		UploadPartSize   int64  `hcl:"upload_part_size"`
+		NumThreads       int    `hcl:"num_threads"`
+		Bandwidth        int    `hcl:"bandwidth"`
+		MountRoot        string `hcl:"mountroot"`
+		ExportPrefix     string `hcl:"exportprefix"`
+		azCreds          *azblob.SharedKeyCredential
 	}
 
 	archiveSet []*archiveConfig
@@ -50,6 +51,8 @@ type (
 		UploadPartSize   int64      `hcl:"upload_part_size"`
 		Archives         archiveSet `hcl:"archive"`
 		Bandwidth        int        `hcl:"bandwidth"`
+		MountRoot        string     `hcl:"mountroot"`
+		ExportPrefix     string     `hcl:"exportprefix"`
 	}
 )
 
@@ -138,6 +141,8 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	}
 
 	a.Bandwidth = g.Bandwidth
+	a.MountRoot = g.MountRoot
+	a.ExportPrefix = g.ExportPrefix
 }
 
 func (c *azConfig) Merge(other *azConfig) *azConfig {
@@ -181,6 +186,16 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.Bandwidth = c.Bandwidth
 	if other.Bandwidth != 0 {
 		result.Bandwidth = other.Bandwidth
+	}
+
+	result.MountRoot = c.MountRoot
+	if other.MountRoot != "" {
+		result.MountRoot = other.MountRoot
+	}
+
+	result.ExportPrefix = c.ExportPrefix
+	if other.ExportPrefix != "" {
+		result.ExportPrefix = other.ExportPrefix
 	}
 
 	return result
