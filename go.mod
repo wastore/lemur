@@ -5,9 +5,10 @@ go 1.13
 require (
 	github.com/Azure/azure-pipeline-go v0.2.2
 	github.com/Azure/azure-storage-azcopy v10.0.2+incompatible
-	github.com/Azure/azure-storage-blob-go v0.10.1-0.20201018150009-b04571d483cd
+	github.com/Azure/azure-storage-blob-go v0.10.1-0.20201022141304-510f9f044952
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fortytw2/leaktest v1.3.0
+	github.com/go-delve/delve v1.5.0 // indirect
 	github.com/golang/protobuf v1.4.2
 	github.com/hashicorp/hcl v1.0.0
 	github.com/influxdata/influxdb v1.8.2 // indirect

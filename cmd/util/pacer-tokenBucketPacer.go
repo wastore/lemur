@@ -100,23 +100,28 @@ func NewTokenBucketPacer(bytesPerSecond int64, expectedBytesPerCoarseRequest int
 // It controls their rate by blocking until they are allowed to proceed
 func (p *tokenBucketPacer) RequestTrafficAllocation(ctx context.Context, byteCount int64) error {
 
-	// block until tokens are available
-	for atomic.AddInt64(&p.atomicTokenBucket, -byteCount) < 0 {
+	if byteCount > p.targetBytesPerSecond() {
+		// knarasim - ToDO better logic
+		atomic.AddInt64(&p.atomicTokenBucket, -byteCount)
+	} else {
+		// block until tokens are available
+		for atomic.AddInt64(&p.atomicTokenBucket, -byteCount) < 0 {
 
-		// by taking our desired count we've moved below zero, which means our allocation is not available
-		// right now, so put back what we asked for, and then wait
-		atomic.AddInt64(&p.atomicTokenBucket, byteCount)
+			// by taking our desired count we've moved below zero, which means our allocation is not available
+			// right now, so put back what we asked for, and then wait
+			atomic.AddInt64(&p.atomicTokenBucket, byteCount)
 
-		// vary the wait amount, to reduce risk of any kind of pulsing or synchronization effect, without the perf and
-		// and threadsafety issues of actual random numbers
-		totalWaitsSoFar := atomic.AddInt64(&p.atomicWaitCount, 1)
-		modifiedSleepDuration := time.Duration(float32(bucketDrainSleepDuration) * (float32(totalWaitsSoFar%10) + 5) / 10) // 50 to 150% of bucketDrainSleepDuration
+			// vary the wait amount, to reduce risk of any kind of pulsing or synchronization effect, without the perf and
+			// and threadsafety issues of actual random numbers
+			totalWaitsSoFar := atomic.AddInt64(&p.atomicWaitCount, 1)
+			modifiedSleepDuration := time.Duration(float32(bucketDrainSleepDuration) * (float32(totalWaitsSoFar%10) + 5) / 10) // 50 to 150% of bucketDrainSleepDuration
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(modifiedSleepDuration):
-			// keep looping
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(modifiedSleepDuration):
+				// keep looping
+			}
 		}
 	}
 

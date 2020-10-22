@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/lemur/cmd/util"
 )
@@ -34,7 +35,7 @@ func Archive(o ArchiveOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
 
 	// We might actually encounter symlinks here.
-	paths := []string{o.SourcePath}
+	paths := []string{o.BlobName}
 
 	for {
 		idx := len(paths) - 1
@@ -61,7 +62,7 @@ func Archive(o ArchiveOptions) (int64, error) {
 	// Currently, we know the absolute paths, with 0 being the first link in the chain and n being the file itself.
 	// Let's decipher what the actual root is, so we know where our blobs live.
 	// Each of our blob names are going to be strings.TrimPrefix(path, fsRootPath)
-	fsRootPath := strings.TrimSuffix(filepath.Dir(o.SourcePath), filepath.Dir(o.BlobName)) + "/"
+	fsRootPath := filepath.Dir(o.BlobName) + "/"
 
 	// First, upload the file... We know exactly where this is and what it's going to be named, thus, we'll fix paths[n] so that links go right.
 
@@ -70,7 +71,9 @@ func Archive(o ArchiveOptions) (int64, error) {
 
 	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, o.ContainerName))
 	containerURL := azblob.NewContainerURL(*cURL, p)
-	blobURL := containerURL.NewBlockBlobURL(o.ExportPrefix + strings.TrimSuffix(strings.TrimPrefix(paths[len(paths)-1], fsRootPath), "/"))
+	dir, fileName := filepath.Split(o.BlobName)
+	blobURL := containerURL.NewBlockBlobURL(dir + o.ExportPrefix + fileName)
+	util.Log(pipeline.LogError, blobURL.String())
 
 	// open the file to read from
 	file, _ := os.Open(paths[len(paths)-1])
@@ -111,11 +114,15 @@ func Archive(o ArchiveOptions) (int64, error) {
 	}
 
 	if hnsEnabledAccount {
-		_, err = blobURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, nil, nil, nil, nil, nil, nil)
+		aclResp, err := blobURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
+		if err == nil {
+			acl := aclResp.XMsACL()
+			_, err = blobURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, &acl, nil, nil, nil, nil, nil)
+		}
 	}
 
 	if err != nil {
-		return total, err
+		return 0, err
 		//TODO: should we delete blob?
 	}
 

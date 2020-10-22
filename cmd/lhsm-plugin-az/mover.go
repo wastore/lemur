@@ -67,20 +67,20 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 		path = m.destination(fileID)
 		container = m.config.Container
 	}
-	debug.Printf("Parsed %s -> %s / %s", fileID, container, path)
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Parsed %s -> %s / %s", fileID, container, path))
 	return container, path, nil
 }
 
 // Archive fulfills an HSM Archive request
 func (m *Mover) Archive(action dmplugin.Action) error {
-	debug.Printf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	start := time.Now()
 
 	var pacer util.Pacer
 	/* start pacer if required */
 	if m.config.Bandwidth != 0 {
-		debug.Printf("Starting pacer with bandwidth %d\n", m.config.Bandwidth)
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwidth %d\n", m.config.Bandwidth))
 		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
 		defer pacer.Close()
 	}
@@ -99,10 +99,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to get pathname")
 	}
-	debug.Printf("Path(s) on FS: %s", strings.Join(fnames, ", "))
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
 
 	if len(fnames) > 1 {
-		debug.Printf("WARNING: multiple paths returned, using first")
+		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
 	}
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
@@ -123,10 +123,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return errors.Wrap(err, "upload failed")
 	}
 
-	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
-		m.config.Container, fileKey)
+		m.config.Container, fileKey))
 
 	u := url.URL{
 		Scheme: "az",
@@ -142,14 +142,14 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 // Restore fulfills an HSM Restore request
 func (m *Mover) Restore(action dmplugin.Action) error {
-	debug.Printf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 
 	var pacer util.Pacer
 
 	start := time.Now()
 	if m.config.Bandwidth != 0 {
-		debug.Printf("Starting pacer with bandwith %d MBPS\n", m.config.Bandwidth)
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwith %d MBPS\n", m.config.Bandwidth))
 		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
 		defer pacer.Close()
 	}
@@ -176,10 +176,10 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Errorf("az.Download() of %s failed: %s", srcObj, err)
 	}
 
-	debug.Printf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
 		srcObj,
-		action.PrimaryPath())
+		action.PrimaryPath()))
 
 	action.SetActualLength(contentLen)
 	return nil
@@ -187,7 +187,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 
 // Remove fulfills an HSM Remove request
 func (m *Mover) Remove(action dmplugin.Action) error {
-	debug.Printf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	if action.UUID() == "" {
 		return errors.New("Missing file_id")
