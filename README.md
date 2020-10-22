@@ -7,13 +7,13 @@ This doc briefly goes over the steps involved in building the plugin for testing
 - Install Docker
 - Run the following commands:
   - az login
-  - az acr login --name jgalaasocr
-    - This is to allow us to pull images from a private registry called `jgalaasocr`.
-  - docker pull jgalaasocr.azurecr.io/copytoolbuildimage/gobuild
+  - az acr login --name [container-registry-name]
+    - This is to allow us to pull images from a private registry called `[container-registry-name]`.
+  - docker pull [container-registry-name].azurecr.io/copytoolbuildimage/gobuild
 
 ### To build the executable
 
-- docker run --name gobuild -v /{path-to-your-lemur-project-code}:/usr/src/lemur -it jgalaasocr.azurecr.io/copytoolbuildimage/gobuild:latest
+- docker run --name gobuild -v /{path-to-your-lemur-project-code}:/usr/src/lemur -it [container-registry-name].azurecr.io/copytoolbuildimage/gobuild:latest
   - Explanation:
     - We are starting a container that has all the right dependencies built (especially Lustre itself)
     - The -v flag is mapping a path on your machine (the lemur project) into a specific path on the container, so that the source code shows up inside the container.
