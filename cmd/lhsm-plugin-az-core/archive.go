@@ -53,6 +53,7 @@ func Archive(o ArchiveOptions) (int64, error) {
 		next, err := os.Readlink(paths[idx])
 
 		if err != nil {
+			util.Log(pipeline.LogError, fmt.Sprintf("Failed to read link. %s", err.Error()))
 			return 0, err
 		}
 
@@ -73,7 +74,8 @@ func Archive(o ArchiveOptions) (int64, error) {
 	containerURL := azblob.NewContainerURL(*cURL, p)
 	dir, fileName := filepath.Split(o.BlobName)
 	blobURL := containerURL.NewBlockBlobURL(dir + o.ExportPrefix + fileName)
-	util.Log(pipeline.LogError, blobURL.String())
+
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s to %s.", o.BlobName, blobURL.String()))
 
 	// open the file to read from
 	file, _ := os.Open(paths[len(paths)-1])
@@ -85,13 +87,25 @@ func Archive(o ArchiveOptions) (int64, error) {
 	owner := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
 	permissions := fmt.Sprintf("%o", fileInfo.Mode())
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
+	var acl string
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 
 	resp, err := blobURL.GetAccountInfo(context.Background())
 	if err != nil {
+		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to account info: %s", o.BlobName, err.Error()))
 		return 0, err
 	}
+
 	hnsEnabledAccount := resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
+	if hnsEnabledAccount {
+		aclResp, err := blobURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
+		if err != nil {
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", o.BlobName, err.Error()))
+			return 0, err
+		}
+		acl = aclResp.XMsACL()
+	}
+
 	if !hnsEnabledAccount {
 		meta["Permissions"] = permissions
 		meta["ModTime"] = modTime
@@ -110,20 +124,16 @@ func Archive(o ArchiveOptions) (int64, error) {
 		})
 
 	if err != nil {
+		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to upload blob: %s", o.BlobName, err.Error()))
 		return 0, err
 	}
 
 	if hnsEnabledAccount {
-		aclResp, err := blobURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
-		if err == nil {
-			acl := aclResp.XMsACL()
-			_, err = blobURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, &acl, nil, nil, nil, nil, nil)
+		_, err = blobURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, &acl, nil, nil, nil, nil, nil)
+		if err != nil {
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set AccessControl: %s", o.BlobName, err.Error()))
+			//TODO: should we delete blob?
 		}
-	}
-
-	if err != nil {
-		return 0, err
-		//TODO: should we delete blob?
 	}
 
 	//// Prior to creating the links, we need to change what the first link is to match the new destination.
@@ -134,11 +144,12 @@ func Archive(o ArchiveOptions) (int64, error) {
 	for idx := len(paths) - 2; idx >= 0; idx-- {
 		linkName := strings.TrimPrefix(paths[idx], fsRootPath)
 		linkDest := strings.TrimPrefix(paths[idx+1], fsRootPath)
+		dir, link := filepath.Split(linkName)
 
 		_, err = azblob.UploadBufferToBlockBlob(
 			ctx,
 			[]byte(linkDest),
-			containerURL.NewBlockBlobURL(o.ExportPrefix+linkName),
+			containerURL.NewBlockBlobURL(dir+o.ExportPrefix+link),
 			azblob.UploadToBlockBlobOptions{
 				Metadata: azblob.Metadata{"ftype": "LNK"},
 			},

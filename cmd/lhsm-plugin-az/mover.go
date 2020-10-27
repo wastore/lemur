@@ -169,6 +169,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		DestinationPath: action.WritePath(),
 		Parallelism:     uint16(m.config.NumThreads),
 		BlockSize:       m.config.UploadPartSize,
+		ExportPrefix:    m.config.ExportPrefix,
 		Pacer:           pacer,
 	})
 
@@ -202,6 +203,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
 		BlobName:      srcObj,
+		ExportPrefix:  m.config.ExportPrefix,
 		Credential:    m.cred,
 	})
 

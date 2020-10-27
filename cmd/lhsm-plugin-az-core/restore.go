@@ -7,7 +7,9 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/pkg/errors"
 	"github.com/wastore/lemur/cmd/util"
@@ -21,6 +23,7 @@ type RestoreOptions struct {
 	Credential      *azblob.SharedKeyCredential
 	Parallelism     uint16
 	BlockSize       int64
+	ExportPrefix    string
 	Pacer           util.Pacer
 }
 
@@ -35,8 +38,10 @@ func Restore(o RestoreOptions) (int64, error) {
 	// First, try to weed out until the symlink.
 	// Symlinks are actually somewhat of an edge-case here that isn't expected,
 	// But we decided that being defensive on the off chance it happens wasn't a bad idea.
-	paths := []string{o.BlobName}
+	dir, fileName := filepath.Split(o.BlobName)
+	paths := []string{dir + o.ExportPrefix + fileName}
 	contentLen, err := int64(0), error(nil)
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s", paths[len(paths)-1]))
 
 	for {
 		u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", o.AccountName, o.ContainerName, paths[len(paths)-1]))
