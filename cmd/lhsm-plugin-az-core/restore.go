@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 
-	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/pkg/errors"
 	"github.com/wastore/lemur/cmd/util"
 )
 
@@ -34,17 +33,18 @@ func Restore(o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
 
 	dir, fileName := filepath.Split(o.BlobName)
-	blobName := []string{dir + o.ExportPrefix + fileName}
-	contentLen, err := int64(0), error(nil)
+	blobName := dir + o.ExportPrefix + fileName
 
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", o.AccountName, o.ContainerName, blobName))
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, o.ContainerName, blobName))
 
 	blobURL := azblob.NewBlobURL(*u, p)
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s", blobURL.String(), o.BlobName))
+	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
+	if err != nil {
+		return 0, errors.Wrapf(err, "GetProperties on %s failed", o.BlobName)
+	}
+	contentLen := blobProp.ContentLength()
 
-	basePath := path.Dir(o.DestinationPath)
-
-	file, _ := os.Create(path.Join(basePath, o.BlobName))
+	file, _ := os.Create(o.DestinationPath)
 	defer file.Close()
 	err = azblob.DownloadBlobToFile(
 		ctx, blobURL, 0, 0, file,

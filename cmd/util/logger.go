@@ -106,6 +106,9 @@ func (jl jobLogger) Log(loglevel pipeline.LogLevel, msg string) {
 		}
 	*/
 
+	if jl.file == nil {
+		return
+	}
 	// ensure all secrets are redacted
 	msg = jl.sanitizer.SanitizeLogMessage(msg)
 	jl.logger.Println(msg)

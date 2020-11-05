@@ -22,7 +22,7 @@ func Remove(o RemoveOptions) error {
 	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
 	dir, fileName := filepath.Split(o.BlobName)
 	blobName := dir + o.ExportPrefix + fileName
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", o.AccountName, o.ContainerName, blobName))
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, blobName))
 
 	// fetch the properties first so that we know how big the source blob is
 	blobURL := azblob.NewBlobURL(*u, p)

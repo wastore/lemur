@@ -37,12 +37,13 @@ func Archive(o ArchiveOptions) (int64, error) {
 	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, o.ContainerName))
 	containerURL := azblob.NewContainerURL(*cURL, p)
 	dir, fileName := filepath.Split(o.BlobName)
-	blobURL := containerURL.NewBlockBlobURL(dir + o.ExportPrefix + fileName)
+	blobName := dir + o.ExportPrefix + fileName
+	blobURL := containerURL.NewBlockBlobURL(blobName)
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s to %s.", o.BlobName, blobURL.String()))
 
 	// open the file to read from
-	file, _ := os.Open(o.BlobName)
+	file, _ := os.Open(o.SourcePath)
 	fileInfo, _ := file.Stat()
 	defer file.Close()
 
@@ -63,7 +64,9 @@ func Archive(o ArchiveOptions) (int64, error) {
 
 	hnsEnabledAccount := resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
 	if hnsEnabledAccount {
-		aclResp, err := blobURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
+		u, _ := url.Parse(fmt.Sprintf("https://%s.dfs.core.windows.net/%s/%s", o.AccountName, o.ContainerName, blobName))
+		dfsURL := azblob.NewBlockBlobURL(*u, p)
+		aclResp, err := dfsURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
 		if err != nil {
 			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", o.BlobName, err.Error()))
 			return 0, err
@@ -94,7 +97,16 @@ func Archive(o ArchiveOptions) (int64, error) {
 	}
 
 	if hnsEnabledAccount {
-		_, err = blobURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, &acl, nil, nil, nil, nil, nil)
+		u, _ := url.Parse(fmt.Sprintf("https://%s.dfs.core.windows.net/%s/%s", o.AccountName, o.ContainerName, blobName))
+		dfsURL := azblob.NewBlockBlobURL(*u, p)
+		/*
+			_, err = dfsURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, nil, nil, nil, nil, nil, nil)
+			if err != nil {
+				util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s, Failed to set owner, group and permissions: %s", o.BlobName, err.Error()))
+				return 0, err
+			}
+		*/
+		_, err = dfsURL.SetAccessControl(ctx, nil, nil, nil, nil, nil, &acl, nil, nil, nil, nil, nil)
 		if err != nil {
 			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set AccessControl: %s", o.BlobName, err.Error()))
 			//TODO: should we delete blob?
