@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
+	"path"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/pkg/errors"
@@ -31,11 +31,9 @@ func Restore(o RestoreOptions) (int64, error) {
 	defer cancel()
 
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
+	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
 
-	dir, fileName := filepath.Split(o.BlobName)
-	blobName := dir + o.ExportPrefix + fileName
-
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, o.ContainerName, blobName))
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, blobPath))
 
 	blobURL := azblob.NewBlobURL(*u, p)
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})

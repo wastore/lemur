@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
+	"path"
 	"syscall"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -36,8 +36,7 @@ func Archive(o ArchiveOptions) (int64, error) {
 	//Get the blob URL
 	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, o.ContainerName))
 	containerURL := azblob.NewContainerURL(*cURL, p)
-	dir, fileName := filepath.Split(o.BlobName)
-	blobName := dir + o.ExportPrefix + fileName
+	blobName := path.Join(o.ExportPrefix, o.BlobName)
 	blobURL := containerURL.NewBlockBlobURL(blobName)
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s to %s.", o.BlobName, blobURL.String()))

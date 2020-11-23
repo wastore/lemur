@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path/filepath"
+	"path"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
@@ -20,9 +20,8 @@ type RemoveOptions struct {
 func Remove(o RemoveOptions) error {
 	ctx := context.TODO()
 	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
-	dir, fileName := filepath.Split(o.BlobName)
-	blobName := dir + o.ExportPrefix + fileName
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, blobName))
+	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, blobPath))
 
 	// fetch the properties first so that we know how big the source blob is
 	blobURL := azblob.NewBlobURL(*u, p)
