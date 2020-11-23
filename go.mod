@@ -3,10 +3,13 @@ module github.com/wastore/lemur
 go 1.13
 
 require (
+	github.com/Azure/azure-pipeline-go v0.2.3
 	github.com/Azure/azure-storage-azcopy v10.0.2+incompatible
-	github.com/Azure/azure-storage-blob-go v0.10.0
+	github.com/Azure/azure-storage-blob-go v0.10.1-0.20201027154117-4e8f2d48550b
+	github.com/Azure/go-autorest/autorest v0.9.0 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fortytw2/leaktest v1.3.0
+	github.com/go-delve/delve v1.5.0 // indirect
 	github.com/golang/protobuf v1.4.2
 	github.com/hashicorp/hcl v1.0.0
 	github.com/influxdata/influxdb v1.8.2 // indirect
@@ -18,7 +21,8 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
 	github.com/wastore/go-lustre v0.0.3
 	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
-	golang.org/x/sys v0.0.0-20200812155832-6a926be9bd1d
+	golang.org/x/sys v0.0.0-20200828194041-157a740278f4
 	google.golang.org/grpc v1.31.0
+	google.golang.org/protobuf v1.23.0
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 )

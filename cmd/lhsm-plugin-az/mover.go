@@ -2,14 +2,17 @@ package main
 
 import (
 	"fmt"
-	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"net/url"
 	"path"
 	"strings"
 	"time"
 
+	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
+	"github.com/wastore/lemur/cmd/util"
+
 	"github.com/pkg/errors"
 
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/go-lustre"
 	"github.com/wastore/go-lustre/fs"
@@ -45,6 +48,8 @@ func (m *Mover) destination(id string) string {
 
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
+	util.InitJobLogger(pipeline.LogInfo)
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
 	debug.Printf("%s started", m.name)
 }
 
@@ -62,15 +67,23 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 		path = m.destination(fileID)
 		container = m.config.Container
 	}
-	debug.Printf("Parsed %s -> %s / %s", fileID, container, path)
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Parsed %s -> %s / %s", fileID, container, path))
 	return container, path, nil
 }
 
 // Archive fulfills an HSM Archive request
 func (m *Mover) Archive(action dmplugin.Action) error {
-	debug.Printf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	start := time.Now()
+
+	var pacer util.Pacer
+	/* start pacer if required */
+	if m.config.Bandwidth != 0 {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwidth %d\n", m.config.Bandwidth))
+		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
+		defer pacer.Close()
+	}
 
 	// translate the fid into an actual path first
 	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
@@ -78,7 +91,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to parse fid")
 	}
-	rootDir, err := fs.MountRoot("/mnt/lhsmd/agent")
+	rootDir, err := fs.MountRoot(m.config.MountRoot)
 	if err != nil {
 		return errors.Wrap(err, "failed to find root dir")
 	}
@@ -86,10 +99,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to get pathname")
 	}
-	debug.Printf("Path(s) on FS: %s", strings.Join(fnames, ", "))
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
 
 	if len(fnames) > 1 {
-		debug.Printf("WARNING: multiple paths returned, using first")
+		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
 	}
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
@@ -102,16 +115,18 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		SourcePath:    action.PrimaryPath(),
 		Parallelism:   uint16(m.config.NumThreads),
 		BlockSize:     m.config.UploadPartSize,
+		Pacer:         pacer,
+		ExportPrefix:  m.config.ExportPrefix,
 	})
 
 	if err != nil {
 		return errors.Wrap(err, "upload failed")
 	}
 
-	debug.Printf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
-		m.config.Container, fileKey)
+		m.config.Container, fileKey))
 
 	u := url.URL{
 		Scheme: "az",
@@ -127,10 +142,17 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 // Restore fulfills an HSM Restore request
 func (m *Mover) Restore(action dmplugin.Action) error {
-	debug.Printf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 
+	var pacer util.Pacer
+
 	start := time.Now()
+	if m.config.Bandwidth != 0 {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwith %d MBPS\n", m.config.Bandwidth))
+		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
+		defer pacer.Close()
+	}
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
@@ -140,23 +162,25 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	}
 
 	contentLen, err := core.Restore(core.RestoreOptions{
-		AccountName: m.config.AzStorageAccount,
-		ContainerName: container,
-		BlobName: srcObj,
-		Credential: m.cred,
+		AccountName:     m.config.AzStorageAccount,
+		ContainerName:   container,
+		BlobName:        srcObj,
+		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
-		Parallelism: uint16(m.config.NumThreads),
-		BlockSize: m.config.UploadPartSize,
+		Parallelism:     uint16(m.config.NumThreads),
+		BlockSize:       m.config.UploadPartSize,
+		ExportPrefix:    m.config.ExportPrefix,
+		Pacer:           pacer,
 	})
 
 	if err != nil {
 		return errors.Errorf("az.Download() of %s failed: %s", srcObj, err)
 	}
 
-	debug.Printf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
 		srcObj,
-		action.PrimaryPath())
+		action.PrimaryPath()))
 
 	action.SetActualLength(contentLen)
 	return nil
@@ -164,7 +188,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 
 // Remove fulfills an HSM Remove request
 func (m *Mover) Remove(action dmplugin.Action) error {
-	debug.Printf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID())
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	if action.UUID() == "" {
 		return errors.New("Missing file_id")
@@ -176,10 +200,11 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	err = core.Remove(core.RemoveOptions{
-		AccountName: m.config.AzStorageAccount,
+		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
-		BlobName: srcObj,
-		Credential: m.cred,
+		BlobName:      srcObj,
+		ExportPrefix:  m.config.ExportPrefix,
+		Credential:    m.cred,
 	})
 
 	if err != nil {

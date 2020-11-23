@@ -1,10 +1,11 @@
 package lhsm_plugin_az_core
 
 import (
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	chk "gopkg.in/check.v1"
 	"os"
 	"path/filepath"
+
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	chk "gopkg.in/check.v1"
 )
 
 func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
@@ -25,7 +26,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	// stage the source blob with small amount of data
 	reader, srcData := getRandomDataAndReader(fileSize)
 	_, err := blobURL.Upload(ctx, reader, azblob.BlobHTTPHeaders{},
-		nil, azblob.BlobAccessConditions{})
+		nil, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
 	c.Assert(err, chk.IsNil)
 
 	// set up destination file
@@ -39,14 +40,15 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
+	blobName = containerName + "/" + blobName
 	count, err := Restore(RestoreOptions{
-		AccountName: account,
-		ContainerName: containerName,
-		BlobName: blobName,
+		AccountName:     account,
+		ContainerName:   "",
+		BlobName:        blobName,
 		DestinationPath: destination,
-		Credential: credential,
-		Parallelism: uint16(parallelism),
-		BlockSize: int64(blockSize),
+		Credential:      credential,
+		Parallelism:     uint16(parallelism),
+		BlockSize:       int64(blockSize),
 	})
 
 	// make sure we got the right info back
@@ -54,7 +56,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	c.Assert(count, chk.Equals, int64(len(srcData)))
 
 	// Assert downloaded data is consistent
-	destBuffer :=  make([]byte, count)
+	destBuffer := make([]byte, count)
 	n, err := destFile.Read(destBuffer)
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(n, chk.Equals, len(srcData))

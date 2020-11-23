@@ -50,11 +50,12 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	defer destFile.Close()
 	defer os.Remove(destFileName)
 
+	blobName := containerName + "/" + fileName
 	// invoke restore to download the file back
 	count, err = Restore(RestoreOptions{
 		AccountName: account,
-		ContainerName: containerName,
-		BlobName: fileName,
+		ContainerName: "",
+		BlobName: blobName,
 		DestinationPath: destFilePath,
 		Credential: credential,
 		Parallelism: uint16(parallelism),

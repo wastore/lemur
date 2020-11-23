@@ -3,21 +3,25 @@ package lhsm_plugin_az_core
 import (
 	"context"
 	"fmt"
-	"github.com/Azure/azure-storage-blob-go/azblob"
 	"net/url"
+	"path"
+
+	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
 type RemoveOptions struct {
-	AccountName string
+	AccountName   string
 	ContainerName string
-	BlobName string
-	Credential *azblob.SharedKeyCredential
+	BlobName      string
+	ExportPrefix  string
+	Credential    *azblob.SharedKeyCredential
 }
 
 func Remove(o RemoveOptions) error {
 	ctx := context.TODO()
 	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", o.AccountName, o.ContainerName, o.BlobName))
+	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, blobPath))
 
 	// fetch the properties first so that we know how big the source blob is
 	blobURL := azblob.NewBlobURL(*u, p)

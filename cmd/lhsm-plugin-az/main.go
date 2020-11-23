@@ -15,11 +15,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 
-	"github.com/wastore/lemur/dmplugin"
-	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/lemur/dmplugin"
+	"github.com/wastore/lemur/pkg/fsroot"
 )
 
 type (
@@ -32,10 +32,12 @@ type (
 		Region           string
 		Container        string
 		Prefix           string
-		UploadPartSize   int64 `hcl:"upload_part_size"`
-		NumThreads       int   `hcl:"num_threads"`
-
-		azCreds *azblob.SharedKeyCredential
+		UploadPartSize   int64  `hcl:"upload_part_size"`
+		NumThreads       int    `hcl:"num_threads"`
+		Bandwidth        int    `hcl:"bandwidth"`
+		MountRoot        string `hcl:"mountroot"`
+		ExportPrefix     string `hcl:"exportprefix"`
+		azCreds          *azblob.SharedKeyCredential
 	}
 
 	archiveSet []*archiveConfig
@@ -48,6 +50,9 @@ type (
 		Region           string     `hcl:"region"`
 		UploadPartSize   int64      `hcl:"upload_part_size"`
 		Archives         archiveSet `hcl:"archive"`
+		Bandwidth        int        `hcl:"bandwidth"`
+		MountRoot        string     `hcl:"mountroot"`
+		ExportPrefix     string     `hcl:"exportprefix"`
 	}
 )
 
@@ -134,6 +139,10 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
 		a.azCreds = creds
 	}
+
+	a.Bandwidth = g.Bandwidth
+	a.MountRoot = g.MountRoot
+	a.ExportPrefix = g.ExportPrefix
 }
 
 func (c *azConfig) Merge(other *azConfig) *azConfig {
@@ -172,6 +181,21 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.Archives = c.Archives
 	if len(other.Archives) > 0 {
 		result.Archives = other.Archives
+	}
+
+	result.Bandwidth = c.Bandwidth
+	if other.Bandwidth != 0 {
+		result.Bandwidth = other.Bandwidth
+	}
+
+	result.MountRoot = c.MountRoot
+	if other.MountRoot != "" {
+		result.MountRoot = other.MountRoot
+	}
+
+	result.ExportPrefix = c.ExportPrefix
+	if other.ExportPrefix != "" {
+		result.ExportPrefix = other.ExportPrefix
 	}
 
 	return result
