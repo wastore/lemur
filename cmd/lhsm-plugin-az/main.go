@@ -18,28 +18,29 @@ import (
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
 )
 
 type (
 	archiveConfig struct {
-		Name             string `hcl:",key"`
-		ID               int
-		AzStorageAccount string `hcl:"az_storage_account"`
-		AzStorageKey     string `hcl:"az_storage_key"`
-		AzStorageSAS     string `hcl:"az_storage_sas"`
-		Endpoint         string
-		Region           string
-		Container        string
-		Prefix           string
-		UploadPartSize   int64  `hcl:"upload_part_size"`
-		NumThreads       int    `hcl:"num_threads"`
-		Bandwidth        int    `hcl:"bandwidth"`
-		MountRoot        string `hcl:"mountroot"`
-		ExportPrefix     string `hcl:"exportprefix"`
-		azCreds          azblob.Credential
+		Name                  string `hcl:",key"`
+		ID                    int
+		AzStorageAccount      string `hcl:"az_storage_account"`
+		AzStorageKey          string `hcl:"az_storage_key"`
+		AzStorageKVName       string `hcl:"az_kv_name"`
+		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
+		AzStorageSAS          string `hcl:"az_storage_sas"`
+		Endpoint              string
+		Region                string
+		Container             string
+		Prefix                string
+		UploadPartSize        int64  `hcl:"upload_part_size"`
+		NumThreads            int    `hcl:"num_threads"`
+		Bandwidth             int    `hcl:"bandwidth"`
+		MountRoot             string `hcl:"mountroot"`
+		ExportPrefix          string `hcl:"exportprefix"`
+		azCreds               azblob.Credential
 	}
 
 	archiveSet []*archiveConfig
@@ -99,10 +100,12 @@ func (a *archiveConfig) checkValid() error {
 }
 
 func (a *archiveConfig) checkAzAccess() error {
-	if _, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey); err != nil {
-		//return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
-		//nakulkar - this to be replaced with access to keyvault
+	if a.AzStorageKVName != "" && a.AzStorageKVSecretName != "" {
 		return nil
+	}
+
+	if _, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey); err != nil {
+		return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
 	}
 
 	/*
@@ -126,6 +129,14 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 		a.AzStorageKey = g.AzStorageKey
 	}
 
+	if a.AzStorageKVName == "" {
+		a.AzStorageKVName = g.AzStorageKVName
+	}
+
+	if a.AzStorageKVSecretName == "" {
+		a.AzStorageKVSecretName = g.AzStorageKVSecretName
+	}
+
 	if a.Endpoint == "" {
 		a.Endpoint = g.Endpoint
 	}
@@ -142,13 +153,10 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	}
 
 	// If these were set on a per-archive basis, override the defaults.
-	if g.AzStorageSAS != "" {
-		a.AzStorageSAS = g.AzStorageSAS
-		creds := azblob.NewAnonymousCredential()
-		a.azCreds = creds
+	if a.AzStorageKVName != "" && a.AzStorageKVSecretName != "" {
+		a.azCreds = azblob.NewAnonymousCredential()
 	} else if a.AzStorageAccount != "" && a.AzStorageKey != "" {
-		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
-		a.azCreds = creds
+		a.azCreds, _ = azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
 	}
 
 	a.Bandwidth = g.Bandwidth
@@ -286,10 +294,6 @@ func main() {
 
 	if len(cfg.Archives) == 0 {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
-	}
-
-	if cfg.AzStorageSAS, err = util.GetKVSecret(cfg.AzStorageKVName, cfg.AzStorageKVSecretName); err != nil {
-		alert.Warnf("Failed to get SAS. Falling back to Shared key.\n%s", err.Error())
 	}
 
 	for _, ac := range cfg.Archives {
