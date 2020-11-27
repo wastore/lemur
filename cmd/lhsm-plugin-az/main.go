@@ -18,6 +18,7 @@ import (
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
 )
@@ -28,6 +29,7 @@ type (
 		ID               int
 		AzStorageAccount string `hcl:"az_storage_account"`
 		AzStorageKey     string `hcl:"az_storage_key"`
+		AzStorageSAS     string `hcl:"az_storage_sas"`
 		Endpoint         string
 		Region           string
 		Container        string
@@ -37,22 +39,25 @@ type (
 		Bandwidth        int    `hcl:"bandwidth"`
 		MountRoot        string `hcl:"mountroot"`
 		ExportPrefix     string `hcl:"exportprefix"`
-		azCreds          *azblob.SharedKeyCredential
+		azCreds          azblob.Credential
 	}
 
 	archiveSet []*archiveConfig
 
 	azConfig struct {
-		NumThreads       int        `hcl:"num_threads"`
-		AzStorageAccount string     `hcl:"az_storage_account"`
-		AzStorageKey     string     `hcl:"az_storage_key"`
-		Endpoint         string     `hcl:"endpoint"`
-		Region           string     `hcl:"region"`
-		UploadPartSize   int64      `hcl:"upload_part_size"`
-		Archives         archiveSet `hcl:"archive"`
-		Bandwidth        int        `hcl:"bandwidth"`
-		MountRoot        string     `hcl:"mountroot"`
-		ExportPrefix     string     `hcl:"exportprefix"`
+		NumThreads            int    `hcl:"num_threads"`
+		AzStorageAccount      string `hcl:"az_storage_account"`
+		AzStorageKey          string `hcl:"az_storage_key"`
+		AzStorageKVName       string `hcl:"az_kv_name"`
+		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
+		AzStorageSAS          string
+		Endpoint              string     `hcl:"endpoint"`
+		Region                string     `hcl:"region"`
+		UploadPartSize        int64      `hcl:"upload_part_size"`
+		Archives              archiveSet `hcl:"archive"`
+		Bandwidth             int        `hcl:"bandwidth"`
+		MountRoot             string     `hcl:"mountroot"`
+		ExportPrefix          string     `hcl:"exportprefix"`
 	}
 )
 
@@ -95,7 +100,9 @@ func (a *archiveConfig) checkValid() error {
 
 func (a *archiveConfig) checkAzAccess() error {
 	if _, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey); err != nil {
-		return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
+		//return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
+		//nakulkar - this to be replaced with access to keyvault
+		return nil
 	}
 
 	/*
@@ -135,7 +142,11 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	}
 
 	// If these were set on a per-archive basis, override the defaults.
-	if a.AzStorageAccount != "" && a.AzStorageKey != "" {
+	if g.AzStorageSAS != "" {
+		a.AzStorageSAS = g.AzStorageSAS
+		creds := azblob.NewAnonymousCredential()
+		a.azCreds = creds
+	} else if a.AzStorageAccount != "" && a.AzStorageKey != "" {
 		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
 		a.azCreds = creds
 	}
@@ -176,6 +187,16 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.AzStorageKey = c.AzStorageKey
 	if other.AzStorageKey != "" {
 		result.AzStorageKey = other.AzStorageKey
+	}
+
+	result.AzStorageKVName = c.AzStorageKVName
+	if other.AzStorageKVName != "" {
+		result.AzStorageKVName = other.AzStorageKVName
+	}
+
+	result.AzStorageKVSecretName = c.AzStorageKVSecretName
+	if other.AzStorageKVSecretName != "" {
+		result.AzStorageKVSecretName = other.AzStorageKVSecretName
 	}
 
 	result.Archives = c.Archives
@@ -224,9 +245,8 @@ func init() {
 	// }
 }
 
-func getStorageSharedKeyCredential(ac *archiveConfig) *azblob.SharedKeyCredential {
-	creds, _ := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
-	return creds
+func getCredential(ac *archiveConfig) azblob.Credential {
+	return ac.azCreds
 }
 
 func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
@@ -268,6 +288,10 @@ func main() {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
 	}
 
+	if cfg.AzStorageSAS, err = util.GetKVSecret(cfg.AzStorageKVName, cfg.AzStorageKVSecretName); err != nil {
+		alert.Warnf("Failed to get SAS. Falling back to Shared key.\n%s", err.Error())
+	}
+
 	for _, ac := range cfg.Archives {
 		ac.mergeGlobals(cfg)
 		if err = ac.checkValid(); err != nil {
@@ -292,7 +316,7 @@ func main() {
 
 	for _, ac := range cfg.Archives {
 		plugin.AddMover(&dmplugin.Config{
-			Mover:      AzMover(ac, getStorageSharedKeyCredential(ac), uint32(ac.ID)),
+			Mover:      AzMover(ac, getCredential(ac), uint32(ac.ID)),
 			NumThreads: cfg.NumThreads,
 			ArchiveID:  uint32(ac.ID),
 		})

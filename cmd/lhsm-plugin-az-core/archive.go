@@ -16,9 +16,10 @@ import (
 type ArchiveOptions struct {
 	AccountName   string
 	ContainerName string
+	ResourceSAS   string
 	BlobName      string
 	SourcePath    string
-	Credential    *azblob.SharedKeyCredential
+	Credential    azblob.Credential
 	Parallelism   uint16
 	BlockSize     int64
 	Pacer         util.Pacer
@@ -34,7 +35,7 @@ func Archive(o ArchiveOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
 
 	//Get the blob URL
-	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, o.ContainerName))
+	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
 	containerURL := azblob.NewContainerURL(*cURL, p)
 	blobName := path.Join(o.ExportPrefix, o.BlobName)
 	blobURL := containerURL.NewBlockBlobURL(blobName)

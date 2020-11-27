@@ -25,12 +25,12 @@ import (
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
 	name   string
-	cred   *azblob.SharedKeyCredential
+	cred   azblob.Credential
 	config *archiveConfig
 }
 
 // AzMover returns a new *Mover
-func AzMover(cfg *archiveConfig, creds *azblob.SharedKeyCredential, archiveID uint32) *Mover {
+func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mover {
 	return &Mover{
 		name:   fmt.Sprintf("az-%d", archiveID),
 		cred:   creds,
@@ -48,7 +48,7 @@ func (m *Mover) destination(id string) string {
 
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
-	util.InitJobLogger(pipeline.LogInfo)
+	util.InitJobLogger(pipeline.LogDebug)
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
 	debug.Printf("%s started", m.name)
 }
@@ -67,7 +67,6 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 		path = m.destination(fileID)
 		container = m.config.Container
 	}
-	util.Log(pipeline.LogDebug, fmt.Sprintf("Parsed %s -> %s / %s", fileID, container, path))
 	return container, path, nil
 }
 
@@ -110,6 +109,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	total, err := core.Archive(core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: m.config.Container,
+		ResourceSAS:   m.config.AzStorageSAS,
 		BlobName:      fileKey,
 		Credential:    m.cred,
 		SourcePath:    action.PrimaryPath(),
@@ -164,6 +164,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
+		ResourceSAS:     m.config.AzStorageSAS,
 		BlobName:        srcObj,
 		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
@@ -202,6 +203,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	err = core.Remove(core.RemoveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
+		ResourceSAS:   m.config.AzStorageSAS,
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,
 		Credential:    m.cred,
