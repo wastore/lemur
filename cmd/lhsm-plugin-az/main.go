@@ -27,7 +27,6 @@ type (
 		Name                  string `hcl:",key"`
 		ID                    int
 		AzStorageAccount      string `hcl:"az_storage_account"`
-		AzStorageKey          string `hcl:"az_storage_key"`
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string `hcl:"az_storage_sas"`
@@ -48,7 +47,6 @@ type (
 	azConfig struct {
 		NumThreads            int    `hcl:"num_threads"`
 		AzStorageAccount      string `hcl:"az_storage_account"`
-		AzStorageKey          string `hcl:"az_storage_key"`
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string
@@ -104,10 +102,6 @@ func (a *archiveConfig) checkAzAccess() error {
 		return nil
 	}
 
-	if _, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey); err != nil {
-		return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
-	}
-
 	/*
 		if _, err := getStorageSharedKeyCredential(a).ListObjects(&s3.ListObjectsInput{
 			Container: aws.String(a.Container),
@@ -123,10 +117,6 @@ func (a *archiveConfig) checkAzAccess() error {
 func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	if a.AzStorageAccount == "" {
 		a.AzStorageAccount = g.AzStorageAccount
-	}
-
-	if a.AzStorageKey == "" {
-		a.AzStorageKey = g.AzStorageKey
 	}
 
 	if a.AzStorageKVName == "" {
@@ -153,12 +143,7 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	}
 
 	// If these were set on a per-archive basis, override the defaults.
-	if a.AzStorageKVName != "" && a.AzStorageKVSecretName != "" {
-		a.azCreds = azblob.NewAnonymousCredential()
-	} else if a.AzStorageAccount != "" && a.AzStorageKey != "" {
-		a.azCreds, _ = azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
-	}
-
+	a.azCreds = azblob.NewAnonymousCredential()
 	a.Bandwidth = g.Bandwidth
 	a.MountRoot = g.MountRoot
 	a.ExportPrefix = g.ExportPrefix
@@ -190,11 +175,6 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.AzStorageAccount = c.AzStorageAccount
 	if other.AzStorageAccount != "" {
 		result.AzStorageAccount = other.AzStorageAccount
-	}
-
-	result.AzStorageKey = c.AzStorageKey
-	if other.AzStorageKey != "" {
-		result.AzStorageKey = other.AzStorageKey
 	}
 
 	result.AzStorageKVName = c.AzStorageKVName

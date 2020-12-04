@@ -72,23 +72,22 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 	return container, path, nil
 }
 
-func (m *Mover) refreshCredential() (err error) {
+func (m *Mover) refreshCredential() {
+	var err error
 	if m.nextCredRefreshTime.After(time.Now()) {
-		return nil
+		return
 	}
 
 	m.cred = azblob.NewAnonymousCredential()
 	m.config.AzStorageSAS, err = util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
 
 	if err != nil {
-		util.Log(pipeline.LogError, fmt.Sprintf("Failed to update SAS. Falling back to Shared key.\n%s", err))
-		m.cred, err = azblob.NewSharedKeyCredential(m.config.AzStorageAccount, m.config.AzStorageKey)
-		return err
+		util.Log(pipeline.LogError, fmt.Sprintf("Failed to update SAS. Falling back to previous SAS.\n%s", err))
+		return
 	}
 
 	//Refresh successful, next refresh - at least 24 hrs later
 	m.nextCredRefreshTime = time.Now().Add(24 * time.Hour)
-	return nil
 }
 
 // Archive fulfills an HSM Archive request
@@ -127,9 +126,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
 
-	if err := m.refreshCredential(); err != nil {
-		return err
-	}
+	m.refreshCredential()
 
 	total, err := core.Archive(core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
@@ -186,9 +183,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
-	if err := m.refreshCredential(); err != nil {
-		return err
-	}
+	m.refreshCredential()
 
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
@@ -229,9 +224,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
-	if err := m.refreshCredential(); err != nil {
-		return err
-	}
+	m.refreshCredential()
 
 	err = core.Remove(core.RemoveOptions{
 		AccountName:   m.config.AzStorageAccount,
