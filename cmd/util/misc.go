@@ -22,12 +22,25 @@ package util
 
 import (
 	"context"
+	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
 func NewPipeline(ctx context.Context, c azblob.Credential, p Pacer, o azblob.PipelineOptions) pipeline.Pipeline {
+	const tryTimeout = time.Minute * 15
+	const retryDelay = time.Second * 1
+	const maxRetryDelay = time.Second * 6
+	const maxTries = 20
+
+	r := azblob.RetryOptions{
+		Policy:        0,
+		MaxTries:      20,
+		TryTimeout:    tryTimeout,
+		RetryDelay:    retryDelay,
+		MaxRetryDelay: maxRetryDelay,
+	}
 	// Closest to API goes first; closest to the wire goes last
 	var f []pipeline.Factory
 
@@ -37,7 +50,7 @@ func NewPipeline(ctx context.Context, c azblob.Credential, p Pacer, o azblob.Pip
 	f = append(f,
 		azblob.NewTelemetryPolicyFactory(o.Telemetry),
 		azblob.NewUniqueRequestIDPolicyFactory(),
-		azblob.NewRetryPolicyFactory(o.Retry),
+		azblob.NewRetryPolicyFactory(r),
 		c,
 		azblob.NewRequestLogPolicyFactory(o.RequestLog),
 		pipeline.MethodFactoryMarker()) // indicates at what stage in the pipeline the method factory is invoked
