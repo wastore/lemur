@@ -29,7 +29,7 @@ type (
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
-		AzStorageSAS          string `hcl:"az_storage_sas"`
+		AzStorageSAS          string
 		Endpoint              string
 		Region                string
 		Container             string
@@ -45,11 +45,10 @@ type (
 	archiveSet []*archiveConfig
 
 	azConfig struct {
-		NumThreads            int    `hcl:"num_threads"`
-		AzStorageAccount      string `hcl:"az_storage_account"`
-		AzStorageKVName       string `hcl:"az_kv_name"`
-		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
-		AzStorageSAS          string
+		NumThreads            int        `hcl:"num_threads"`
+		AzStorageAccount      string     `hcl:"az_storage_account"`
+		AzStorageKVName       string     `hcl:"az_kv_name"`
+		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
 		Endpoint              string     `hcl:"endpoint"`
 		Region                string     `hcl:"region"`
 		UploadPartSize        int64      `hcl:"upload_part_size"`
@@ -98,8 +97,8 @@ func (a *archiveConfig) checkValid() error {
 }
 
 func (a *archiveConfig) checkAzAccess() error {
-	if a.AzStorageKVName != "" && a.AzStorageKVSecretName != "" {
-		return nil
+	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
+		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
 	/*
