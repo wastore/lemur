@@ -24,35 +24,38 @@ import (
 
 type (
 	archiveConfig struct {
-		Name             string `hcl:",key"`
-		ID               int
-		AzStorageAccount string `hcl:"az_storage_account"`
-		AzStorageKey     string `hcl:"az_storage_key"`
-		Endpoint         string
-		Region           string
-		Container        string
-		Prefix           string
-		UploadPartSize   int64  `hcl:"upload_part_size"`
-		NumThreads       int    `hcl:"num_threads"`
-		Bandwidth        int    `hcl:"bandwidth"`
-		MountRoot        string `hcl:"mountroot"`
-		ExportPrefix     string `hcl:"exportprefix"`
-		azCreds          *azblob.SharedKeyCredential
+		Name                  string `hcl:",key"`
+		ID                    int
+		AzStorageAccount      string `hcl:"az_storage_account"`
+		AzStorageKVName       string `hcl:"az_kv_name"`
+		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
+		AzStorageSAS          string
+		Endpoint              string
+		Region                string
+		Container             string
+		Prefix                string
+		UploadPartSize        int64  `hcl:"upload_part_size"`
+		NumThreads            int    `hcl:"num_threads"`
+		Bandwidth             int    `hcl:"bandwidth"`
+		MountRoot             string `hcl:"mountroot"`
+		ExportPrefix          string `hcl:"exportprefix"`
+		azCreds               azblob.Credential
 	}
 
 	archiveSet []*archiveConfig
 
 	azConfig struct {
-		NumThreads       int        `hcl:"num_threads"`
-		AzStorageAccount string     `hcl:"az_storage_account"`
-		AzStorageKey     string     `hcl:"az_storage_key"`
-		Endpoint         string     `hcl:"endpoint"`
-		Region           string     `hcl:"region"`
-		UploadPartSize   int64      `hcl:"upload_part_size"`
-		Archives         archiveSet `hcl:"archive"`
-		Bandwidth        int        `hcl:"bandwidth"`
-		MountRoot        string     `hcl:"mountroot"`
-		ExportPrefix     string     `hcl:"exportprefix"`
+		NumThreads            int        `hcl:"num_threads"`
+		AzStorageAccount      string     `hcl:"az_storage_account"`
+		AzStorageKVName       string     `hcl:"az_kv_name"`
+		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
+		Endpoint              string     `hcl:"endpoint"`
+		Region                string     `hcl:"region"`
+		UploadPartSize        int64      `hcl:"upload_part_size"`
+		Archives              archiveSet `hcl:"archive"`
+		Bandwidth             int        `hcl:"bandwidth"`
+		MountRoot             string     `hcl:"mountroot"`
+		ExportPrefix          string     `hcl:"exportprefix"`
 	}
 )
 
@@ -94,8 +97,8 @@ func (a *archiveConfig) checkValid() error {
 }
 
 func (a *archiveConfig) checkAzAccess() error {
-	if _, err := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey); err != nil {
-		return errors.Wrap(err, "No Az credentials found; cannot initialize data mover")
+	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
+		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
 	/*
@@ -115,8 +118,12 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 		a.AzStorageAccount = g.AzStorageAccount
 	}
 
-	if a.AzStorageKey == "" {
-		a.AzStorageKey = g.AzStorageKey
+	if a.AzStorageKVName == "" {
+		a.AzStorageKVName = g.AzStorageKVName
+	}
+
+	if a.AzStorageKVSecretName == "" {
+		a.AzStorageKVSecretName = g.AzStorageKVSecretName
 	}
 
 	if a.Endpoint == "" {
@@ -135,11 +142,7 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	}
 
 	// If these were set on a per-archive basis, override the defaults.
-	if a.AzStorageAccount != "" && a.AzStorageKey != "" {
-		creds, _ := azblob.NewSharedKeyCredential(a.AzStorageAccount, a.AzStorageKey)
-		a.azCreds = creds
-	}
-
+	a.azCreds = azblob.NewAnonymousCredential()
 	a.Bandwidth = g.Bandwidth
 	a.MountRoot = g.MountRoot
 	a.ExportPrefix = g.ExportPrefix
@@ -173,9 +176,14 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.AzStorageAccount = other.AzStorageAccount
 	}
 
-	result.AzStorageKey = c.AzStorageKey
-	if other.AzStorageKey != "" {
-		result.AzStorageKey = other.AzStorageKey
+	result.AzStorageKVName = c.AzStorageKVName
+	if other.AzStorageKVName != "" {
+		result.AzStorageKVName = other.AzStorageKVName
+	}
+
+	result.AzStorageKVSecretName = c.AzStorageKVSecretName
+	if other.AzStorageKVSecretName != "" {
+		result.AzStorageKVSecretName = other.AzStorageKVSecretName
 	}
 
 	result.Archives = c.Archives
@@ -224,9 +232,8 @@ func init() {
 	// }
 }
 
-func getStorageSharedKeyCredential(ac *archiveConfig) *azblob.SharedKeyCredential {
-	creds, _ := azblob.NewSharedKeyCredential(ac.AzStorageAccount, ac.AzStorageKey)
-	return creds
+func getCredential(ac *archiveConfig) azblob.Credential {
+	return ac.azCreds
 }
 
 func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
@@ -292,7 +299,7 @@ func main() {
 
 	for _, ac := range cfg.Archives {
 		plugin.AddMover(&dmplugin.Config{
-			Mover:      AzMover(ac, getStorageSharedKeyCredential(ac), uint32(ac.ID)),
+			Mover:      AzMover(ac, getCredential(ac), uint32(ac.ID)),
 			NumThreads: cfg.NumThreads,
 			ArchiveID:  uint32(ac.ID),
 		})

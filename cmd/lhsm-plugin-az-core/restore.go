@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/pkg/errors"
 	"github.com/wastore/lemur/cmd/util"
@@ -15,9 +16,10 @@ import (
 type RestoreOptions struct {
 	AccountName     string
 	ContainerName   string
+	ResourceSAS     string
 	BlobName        string
 	DestinationPath string
-	Credential      *azblob.SharedKeyCredential
+	Credential      azblob.Credential
 	Parallelism     uint16
 	BlockSize       int64
 	ExportPrefix    string
@@ -33,7 +35,9 @@ func Restore(o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
 	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
 
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", o.AccountName, blobPath))
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, blobPath, o.ResourceSAS))
+
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
 
 	blobURL := azblob.NewBlobURL(*u, p)
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
