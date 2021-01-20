@@ -26,6 +26,8 @@ type RestoreOptions struct {
 	Pacer           util.Pacer
 }
 
+var maxRetryPerDownloadBody = 5
+
 // persist a blob to the local filesystem
 func Restore(o RestoreOptions) (int64, error) {
 	restoreCtx := context.Background()
@@ -53,6 +55,10 @@ func Restore(o RestoreOptions) (int64, error) {
 		azblob.DownloadFromBlobOptions{
 			BlockSize:   o.BlockSize,
 			Parallelism: o.Parallelism,
+			RetryReaderOptionsPerBlock: azblob.RetryReaderOptions{
+				MaxRetryRequests: maxRetryPerDownloadBody,
+				NotifyFailedRead: util.NewReadLogFunc(u.String()),
+			},
 		})
 
 	return contentLen, err
