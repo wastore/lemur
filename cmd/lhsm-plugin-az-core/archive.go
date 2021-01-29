@@ -43,7 +43,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	meta := azblob.Metadata{}
 
 	//Get owner, group and perms
-	fileInfo, err := os.Stat(blobPath)
+	fileInfo, err := os.Stat(path.Join(o.MountRoot, blobPath))
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get fileInfo: %s", blobPath, err.Error()))
 		return 0, err
@@ -74,7 +74,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		meta["hdi_isfolder"] = "true"
 		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
 	} else {
-		file, _ := os.Open(blobPath)
+		file, _ := os.Open(path.Join(o.MountRoot, blobPath))
 		defer file.Close()
 		_, err = azblob.UploadFileToBlockBlob(
 			ctx, file, blobURL,
@@ -125,14 +125,15 @@ func Archive(o ArchiveOptions) (size int64, err error) {
 
 	// Upload the file
 	go func() {
-		size, err = upload(ctx, o, o.SourcePath)
+		size, err = upload(ctx, o, o.BlobName)
 		wg.Done()
 	}()
 
 	//parallely upload directories starting from root.
-	blobPath := o.MountRoot
 	guard := make(chan struct{}, parallelDirCount) //Guard maintains bounded paralleism for uploading directories
 	defer close(guard)
+
+	blobPath := ""
 	for _, currDir := range parents {
 		blobPath = path.Join(blobPath, currDir) //keep appending path to the url
 

@@ -1,10 +1,11 @@
 package lhsm_plugin_az_core
 
 import (
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	chk "gopkg.in/check.v1"
 	"os"
 	"path/filepath"
+
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	chk "gopkg.in/check.v1"
 )
 
 // test upload/download with the source data uploaded to the service from a file
@@ -31,13 +32,14 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
 	count, err := Archive(ArchiveOptions{
-		AccountName: account,
+		AccountName:   account,
 		ContainerName: containerName,
-		BlobName: fileName,
-		SourcePath: filePath,
-		Credential: credential,
-		Parallelism: uint16(parallelism),
-		BlockSize: int64(blockSize),
+		BlobName:      fileName,
+		SourcePath:    filePath,
+		Credential:    credential,
+		Parallelism:   uint16(parallelism),
+		BlockSize:     int64(blockSize),
+		MountRoot:     os.TempDir(),
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -53,13 +55,13 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	blobName := containerName + "/" + fileName
 	// invoke restore to download the file back
 	count, err = Restore(RestoreOptions{
-		AccountName: account,
-		ContainerName: "",
-		BlobName: blobName,
+		AccountName:     account,
+		ContainerName:   "",
+		BlobName:        blobName,
 		DestinationPath: destFilePath,
-		Credential: credential,
-		Parallelism: uint16(parallelism),
-		BlockSize: int64(blockSize),
+		Credential:      credential,
+		Parallelism:     uint16(parallelism),
+		BlockSize:       int64(blockSize),
 	})
 
 	// Assert download was successful
@@ -67,7 +69,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	c.Assert(count, chk.Equals, int64(fileSize))
 
 	// Assert downloaded data is consistent
-	destBuffer :=  make([]byte, count)
+	destBuffer := make([]byte, count)
 	n, err := destFile.Read(destBuffer)
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(n, chk.Equals, fileSize)
