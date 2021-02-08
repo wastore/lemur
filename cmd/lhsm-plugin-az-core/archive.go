@@ -138,11 +138,11 @@ func Archive(o ArchiveOptions) (size int64, err error) {
 		blobPath = path.Join(blobPath, currDir) //keep appending path to the url
 
 		guard <- struct{}{} //block till we've enough room.
-		go func() {
-			upload(ctx, o, blobPath)
+		go func(p string) {
+			upload(ctx, o, p)
 			<-guard //release a space in guard.
 			wg.Done()
-		}()
+		}(blobPath)
 	}
 
 	wg.Wait()
