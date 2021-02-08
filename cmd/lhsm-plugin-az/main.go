@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -18,6 +20,7 @@ import (
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
 )
@@ -27,6 +30,7 @@ type (
 		Name                  string `hcl:",key"`
 		ID                    int
 		AzStorageAccount      string `hcl:"az_storage_account"`
+		HNSEnabled            bool
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string
@@ -96,18 +100,31 @@ func (a *archiveConfig) checkValid() error {
 	return nil
 }
 
-func (a *archiveConfig) checkAzAccess() error {
+func (a *archiveConfig) checkAzAccess() (err error) {
 	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
-	/*
-		if _, err := getStorageSharedKeyCredential(a).ListObjects(&s3.ListObjectsInput{
-			Container: aws.String(a.Container),
-		}); err != nil {
-			return errors.Wrap(err, "Unable to list S3 Container objects")
-		}
-	*/
+	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
+
+	if err != nil {
+		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
+	}
+
+	return nil
+}
+
+func (a *archiveConfig) setAccountType() (err error) {
+	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
+	serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
+
+	resp, err := serviceURL.GetAccountInfo(context.Background())
+	if err != nil {
+		return err
+	}
+
+	a.HNSEnabled = resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
+
 	return nil
 }
 
@@ -282,6 +299,9 @@ func main() {
 		}
 		if err = ac.checkAzAccess(); err != nil {
 			alert.Abort(errors.Wrap(err, "Az access check failed"))
+		}
+		if err = ac.setAccountType(); err != nil {
+			alert.Abort(errors.Wrap(err, "Failed to set account type"))
 		}
 	}
 

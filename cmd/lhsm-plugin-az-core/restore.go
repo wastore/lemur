@@ -28,7 +28,7 @@ type RestoreOptions struct {
 
 var maxRetryPerDownloadBody = 5
 
-// persist a blob to the local filesystem
+//Restore persists a blob to the local filesystem
 func Restore(o RestoreOptions) (int64, error) {
 	restoreCtx := context.Background()
 	ctx, cancel := context.WithCancel(restoreCtx)
@@ -37,7 +37,7 @@ func Restore(o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
 	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
 
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, blobPath, o.ResourceSAS))
+	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
 
