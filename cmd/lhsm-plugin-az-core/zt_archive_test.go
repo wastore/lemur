@@ -92,7 +92,7 @@ func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
 func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	fileName := generateName("", 0)
 	fileSize := 1024
-	tempDir := "/home/nakulkar/tmp/"
+	tempDir := os.TempDir()
 	pathWithManyDirs := "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/"
 	filePath := filepath.Join(pathWithManyDirs, fileName)
 
