@@ -73,21 +73,29 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 }
 
 func (m *Mover) refreshCredential() {
+	const sigAzure = "sig="
 	var err error
 	if m.nextCredRefreshTime.After(time.Now()) {
 		return
 	}
 
 	m.cred = azblob.NewAnonymousCredential()
-	m.config.AzStorageSAS, err = util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+	sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
 
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Failed to update SAS. Falling back to previous SAS.\n%s", err))
 		return
 	}
 
+	if !strings.Contains(sas, sigAzure) {
+		util.Log(pipeline.LogError, fmt.Sprintf("Failed to update SAS, invalid SAS returned. Falling back to previous SAS."))
+		return
+	}
+
 	//Refresh successful, next refresh - at least 24 hrs later
+	util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
 	m.nextCredRefreshTime = time.Now().Add(24 * time.Hour)
+	m.config.AzStorageSAS = sas
 }
 
 // Archive fulfills an HSM Archive request

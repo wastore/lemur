@@ -101,11 +101,16 @@ func (a *archiveConfig) checkValid() error {
 }
 
 func (a *archiveConfig) checkAzAccess() (err error) {
+	const sigAzure string = "sig="
 	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
+	// If return string does not contain "sig=", we're sure it is not SAS.
+	if !strings.Contains(a.AzStorageSAS, sigAzure) {
+		return errors.Wrap(err, "Invalid secret returned. SAS string expected.")
+	}
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
