@@ -77,6 +77,5 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 		return "", err
 	}
 
-	Log(pipeline.LogDebug, *secretResp.Value)
 	return *secretResp.Value, nil
 }

@@ -50,7 +50,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	}
 
 	owner := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
-	permissions := fmt.Sprintf("%o", fileInfo.Mode())
+	permissions := fmt.Sprintf("%#o", fileInfo.Mode())
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 	var getACLResp *azblob.BlobGetAccessControlResponse
@@ -65,10 +65,10 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		}
 	}
 
-	meta["Permissions"] = permissions
-	meta["ModTime"] = modTime
-	meta["Owner"] = owner
-	meta["Group"] = group
+	meta["permissions"] = permissions
+	meta["modtime"] = modTime
+	meta["owner"] = owner
+	meta["group"] = group
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
