@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -29,6 +30,7 @@ type ArchiveOptions struct {
 	Pacer         util.Pacer
 	ExportPrefix  string
 	HNSEnabled    bool
+	HTTPClient    *http.Client
 }
 
 const blobEndPoint string = "https://%s.blob.core.windows.net/"
@@ -36,7 +38,7 @@ const dfsEndPoint string = "https://%s.dfs.core.windows.net/"
 const parallelDirCount = 64 // Number parallel dir metadata uploads
 
 func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, err error) {
-	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
+	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	cURL, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
 	containerURL := azblob.NewContainerURL(*cURL, p)
 	blobURL := containerURL.NewBlockBlobURL(blobPath)
@@ -50,7 +52,10 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	}
 
 	owner := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
-	permissions := fmt.Sprintf("%#o", fileInfo.Mode())
+	permissions := uint32(fileInfo.Mode().Perm())
+	if fileInfo.Mode()&os.ModeSticky != 0 {
+		permissions |= syscall.S_ISVTX
+	}
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 	var getACLResp *azblob.BlobGetAccessControlResponse
@@ -65,7 +70,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		}
 	}
 
-	meta["permissions"] = permissions
+	meta["permissions"] = fmt.Sprintf("%04o", permissions)
 	meta["modtime"] = modTime
 	meta["owner"] = owner
 	meta["group"] = group

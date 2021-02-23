@@ -22,11 +22,11 @@ package util
 
 import (
 	"fmt"
-	"log"
 	"os"
-	"path"
 	"runtime"
 	"time"
+	"log"
+	"log/syslog"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 )
@@ -67,14 +67,12 @@ func (jl *jobLogger) OpenLog() {
 		return
 	}
 
-	file, err := os.OpenFile(path.Join("/var/log/azcopy.log"),
-		os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644 /*Default file perm */)
+	logwriter, err := syslog.New(syslog.LOG_NOTICE, "lemurCopytool")
 	if err != nil {
 		panic(err)
 	}
 
-	jl.file = file
-
+	log.SetOutput(logwriter)
 	flags := log.LstdFlags | log.LUTC
 	utcMessage := fmt.Sprintf("Log times are in UTC. Local time is " + time.Now().Format("2 Jan 2006 15:04:05"))
 
