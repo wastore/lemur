@@ -1,10 +1,13 @@
 package lhsm_plugin_az_core
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/wastore/lemur/cmd/util"
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	chk "gopkg.in/check.v1"
 )
 
@@ -36,6 +39,9 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	defer destFile.Close()
 	defer os.Remove(destination)
 
+	//setup logging
+	util.InitJobLogger(pipeline.LogDebug)
+
 	// exercise restore
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
@@ -49,6 +55,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
+		HTTPClient: &http.Client{},
 	})
 
 	// make sure we got the right info back

@@ -12,9 +12,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	pb "github.com/wastore/lemur/pdm"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/lemur/cmd/util"
+	pb "github.com/wastore/lemur/pdm"
 	"golang.org/x/net/context"
 )
 
@@ -407,6 +408,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 			err = actionFn(action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
+		err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
 		action.Finish(err)
 	}
 	debug.Printf("%s: stopping", name)
