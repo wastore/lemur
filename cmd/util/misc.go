@@ -22,6 +22,7 @@ package util
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -30,6 +31,20 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
+//HTTPClientFactory returns http sender with given client
+func HTTPClientFactory(client *http.Client) pipeline.FactoryFunc {
+	return pipeline.FactoryFunc(func(next pipeline.Policy, po *pipeline.PolicyOptions) pipeline.PolicyFunc {
+		return func(ctx context.Context, request pipeline.Request) (pipeline.Response, error) {
+			r, err := client.Do(request.WithContext(ctx))
+			if err != nil {
+				err = pipeline.NewError(err, "HTTP request failed")
+			}
+			return pipeline.NewHTTPResponse(r), err
+		}
+	})
+}
+
+// NewPipeline creates a blobpipeline with these options
 func NewPipeline(ctx context.Context, c azblob.Credential, p Pacer, o azblob.PipelineOptions) pipeline.Pipeline {
 	const tryTimeout = time.Minute * 15
 	const retryDelay = time.Second * 1

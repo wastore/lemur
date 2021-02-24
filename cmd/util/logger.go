@@ -23,8 +23,7 @@ package util
 import (
 	"fmt"
 	"log"
-	"os"
-	"path"
+	"log/syslog"
 	"runtime"
 	"time"
 
@@ -47,7 +46,6 @@ type jobLogger struct {
 	// maximum loglevel represents the maximum severity of log messages which can be logged to Job Log file.
 	// any message with severity higher than this will be ignored.
 	minimumLevelToLog pipeline.LogLevel // The maximum customer-desired log level for this job
-	file              *os.File          // The job's log file
 	logger            *log.Logger       // The Job's logger
 	sanitizer         pipeline.LogSanitizer
 }
@@ -67,18 +65,16 @@ func (jl *jobLogger) OpenLog() {
 		return
 	}
 
-	file, err := os.OpenFile(path.Join("/var/log/azcopy.log"),
-		os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644 /*Default file perm */)
+	logwriter, err := syslog.New(syslog.LOG_NOTICE, "lhsm-plugin-az")
 	if err != nil {
 		panic(err)
 	}
 
-	jl.file = file
-
+	log.SetOutput(logwriter)
 	flags := log.LstdFlags | log.LUTC
 	utcMessage := fmt.Sprintf("Log times are in UTC. Local time is " + time.Now().Format("2 Jan 2006 15:04:05"))
 
-	jl.logger = log.New(jl.file, "", flags)
+	jl.logger = log.New(logwriter, "", flags)
 	// Log the OS Environment and OS Architecture
 	jl.logger.Println("OS-Environment ", runtime.GOOS)
 	jl.logger.Println("OS-Architecture ", runtime.GOARCH)
@@ -86,29 +82,10 @@ func (jl *jobLogger) OpenLog() {
 }
 
 func (jl *jobLogger) CloseLog() {
-	if jl.minimumLevelToLog == pipeline.LogNone {
-		return
-	}
-
-	jl.logger.Println("Closing Log")
-	err := jl.file.Close()
-	if err != nil {
-		panic(err)
-	}
+	return
 }
 
 func (jl jobLogger) Log(loglevel pipeline.LogLevel, msg string) {
-	// If the logger for Job is not initialized i.e file is not open
-	// or logger instance is not initialized, then initialize it
-	/*
-		if loglevel < jl.minimumLevelToLog {
-			return
-		}
-	*/
-
-	if jl.file == nil {
-		return
-	}
 	// ensure all secrets are redacted
 	msg = jl.sanitizer.SanitizeLogMessage(msg)
 	jl.logger.Println(msg)

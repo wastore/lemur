@@ -3,6 +3,7 @@ package lhsm_plugin_az_core
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -24,6 +25,7 @@ type RestoreOptions struct {
 	BlockSize       int64
 	ExportPrefix    string
 	Pacer           util.Pacer
+	HTTPClient      *http.Client
 }
 
 var maxRetryPerDownloadBody = 5
@@ -34,7 +36,7 @@ func Restore(o RestoreOptions) (int64, error) {
 	ctx, cancel := context.WithCancel(restoreCtx)
 	defer cancel()
 
-	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{})
+	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
 
 	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))

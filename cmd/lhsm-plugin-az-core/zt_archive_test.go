@@ -3,6 +3,7 @@ package lhsm_plugin_az_core
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/wastore/lemur/cmd/util"
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	chk "gopkg.in/check.v1"
 )
 
@@ -33,6 +36,9 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	containerURL, containerName := createNewContainer(c, bsu)
 	defer deleteContainer(c, containerURL)
 
+	//setup logger
+	util.InitJobLogger(pipeline.LogDebug)
+
 	// Upload the file to a block blob
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
@@ -46,6 +52,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 		Parallelism:   uint16(parallelism),
 		BlockSize:     int64(blockSize),
 		MountRoot:     os.TempDir(),
+		HTTPClient: &http.Client{},
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -68,6 +75,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
+		HTTPClient: &http.Client{},
 	})
 
 	// Assert download was successful
@@ -114,6 +122,9 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	containerURL, containerName := createNewContainer(c, bsu)
 	defer deleteContainer(c, containerURL)
 
+	//setup logging
+	util.InitJobLogger(pipeline.LogDebug)
+
 	// Upload the file to a block blob
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
@@ -127,6 +138,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		Parallelism:   uint16(3),
 		BlockSize:     int64(2048), //2M
 		MountRoot:     tempDir,
+		HTTPClient: &http.Client{},
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -140,7 +152,10 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
 		info, err := os.Stat(filepath.Join(tempDir, blobname))
 		owner := fmt.Sprintf("%d", info.Sys().(*syscall.Stat_t).Uid)
-		permissions := info.Mode()
+		permissions := uint32(info.Mode().Perm())
+		if info.Mode()&os.ModeSticky != 0 {
+			permissions |= syscall.S_ISVTX
+		}
 		group := fmt.Sprintf("%d", info.Sys().(*syscall.Stat_t).Gid)
 
 		props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
@@ -151,6 +166,6 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		c.Assert(meta["group"], chk.Equals, group)
 
 		blobPerms, _ := strconv.ParseUint(meta["permissions"], 8, 32)
-		c.Assert(os.FileMode(blobPerms), chk.Equals, permissions)
+		c.Assert(blobPerms, chk.Equals, uint64(permissions))
 	}
 }

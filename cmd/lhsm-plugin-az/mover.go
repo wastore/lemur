@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -26,8 +27,9 @@ import (
 type Mover struct {
 	name                string
 	cred                azblob.Credential
-	nextCredRefreshTime time.Time
+	httpClient          *http.Client
 	config              *archiveConfig
+	nextCredRefreshTime time.Time
 }
 
 // AzMover returns a new *Mover
@@ -37,6 +39,18 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 		cred:                creds,
 		nextCredRefreshTime: time.Now().Add(-1 * time.Second), // So that first action updates SAS
 		config:              cfg,
+		httpClient: 		 &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConns:           0, // No limit
+				MaxIdleConnsPerHost:    cfg.NumThreads,
+				IdleConnTimeout:        180 * time.Second,
+				TLSHandshakeTimeout:    10 * time.Second,
+				ExpectContinueTimeout:  1 * time.Second,
+				DisableKeepAlives:      false,
+				DisableCompression:     true, 
+				MaxResponseHeaderBytes: 0,
+			},
+		},
 	}
 }
 
@@ -149,6 +163,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		Pacer:         pacer,
 		ExportPrefix:  m.config.ExportPrefix,
 		HNSEnabled:    m.config.HNSEnabled,
+		HTTPClient:    m.httpClient,
 	})
 
 	if err != nil {
@@ -206,6 +221,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		BlockSize:       m.config.UploadPartSize,
 		ExportPrefix:    m.config.ExportPrefix,
 		Pacer:           pacer,
+		HTTPClient:      m.httpClient,
 	})
 
 	if err != nil {
