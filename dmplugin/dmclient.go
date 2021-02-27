@@ -408,7 +408,9 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 			err = actionFn(action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
-		err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+		if err != nil {
+			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+		}
 		action.Finish(err)
 	}
 	debug.Printf("%s: stopping", name)
