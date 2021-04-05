@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -29,7 +30,7 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	nextCredRefreshTime time.Time
+	forceSASRefresh     chan bool
 }
 
 // AzMover returns a new *Mover
@@ -37,7 +38,6 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 	return &Mover{
 		name:                fmt.Sprintf("az-%d", archiveID),
 		cred:                creds,
-		nextCredRefreshTime: time.Now().Add(-1 * time.Second), // So that first action updates SAS
 		config:              cfg,
 		httpClient: 		 &http.Client{
 			Transport: &http.Transport{
@@ -51,6 +51,7 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 				MaxResponseHeaderBytes: 0,
 			},
 		},
+		forceSASRefresh:    make(chan bool),
 	}
 }
 
@@ -66,6 +67,7 @@ func (m *Mover) destination(id string) string {
 func (m *Mover) Start() {
 	util.InitJobLogger(pipeline.LogDebug)
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
+	go m.refreshCredential()
 	debug.Printf("%s started", m.name)
 }
 
@@ -86,30 +88,63 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 	return container, path, nil
 }
 
+func (m *Mover) getSASToken() string {
+	m.config.configLock.Lock()
+	defer m.config.configLock.Unlock()
+	return m.config.AzStorageSAS
+}
+
 func (m *Mover) refreshCredential() {
 	const sigAzure = "sig="
-	var err error
-	if m.nextCredRefreshTime.After(time.Now()) {
-		return
+	nextRefreshInterval := time.Duration(0)
+	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
+	retryDelay := 4*time.Second // 4 seconds
+	maxTries := 20
+	try := 1 // Number of retries to get the SAS. Starts at 1.
+
+	for {
+		select {
+		case <- time.After(nextRefreshInterval):
+			sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+
+			if err == nil && !strings.Contains(sas, sigAzure) {
+				err = fmt.Errorf("invalid SAS returned")
+			}
+
+			if err != nil {
+
+				util.Log(pipeline.LogError,	fmt.Sprintf(
+							"Failed to update SAS. Falling back to previous SAS.\nReason: %s, try: %d",
+							err, try))
+				
+				/* 
+				 * Failed to update SAS. We'll retry with exponential delay.
+				 */
+				if (try <= maxTries) {
+					nextRefreshInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
+					try++
+				} else {
+					util.Log(pipeline.LogError, fmt.Sprintf("Could not update SAS in %d attempts. Giving up.", try))
+					nextRefreshInterval = defaultRefreshInterval
+					try = 1
+				}
+				util.Log(pipeline.LogError, fmt.Sprintf(
+							"Next refresh at %s", 
+							time.Now().Add(nextRefreshInterval).String()))
+				continue
+			}
+
+			//Refresh successful, next refresh - after m.config.CredRefreshInterval
+			util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
+			util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextRefreshInterval).String()))
+			nextRefreshInterval = defaultRefreshInterval
+
+			m.config.configLock.Lock()
+			m.config.AzStorageSAS = sas
+			m.config.configLock.Unlock()
+		default:
+		}
 	}
-
-	m.cred = azblob.NewAnonymousCredential()
-	sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
-
-	if err != nil {
-		util.Log(pipeline.LogError, fmt.Sprintf("Failed to update SAS. Falling back to previous SAS.\n%s", err))
-		return
-	}
-
-	if !strings.Contains(sas, sigAzure) {
-		util.Log(pipeline.LogError, fmt.Sprintf("Failed to update SAS, invalid SAS returned. Falling back to previous SAS."))
-		return
-	}
-
-	//Refresh successful, next refresh - at least 24 hrs later
-	util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
-	m.nextCredRefreshTime = time.Now().Add(24 * time.Hour)
-	m.config.AzStorageSAS = sas
 }
 
 // Archive fulfills an HSM Archive request
@@ -153,7 +188,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	total, err := core.Archive(core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: m.config.Container,
-		ResourceSAS:   m.config.AzStorageSAS,
+		ResourceSAS:   m.getSASToken(),
 		MountRoot:     m.config.MountRoot,
 		BlobName:      fileKey,
 		Credential:    m.cred,
@@ -213,7 +248,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
-		ResourceSAS:     m.config.AzStorageSAS,
+		ResourceSAS:     m.getSASToken(),
 		BlobName:        srcObj,
 		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
@@ -255,7 +290,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	err = core.Remove(core.RemoveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
-		ResourceSAS:   m.config.AzStorageSAS,
+		ResourceSAS:   m.getSASToken(),
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,
 		Credential:    m.cred,
