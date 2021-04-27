@@ -96,8 +96,8 @@ func (m *Mover) getSASToken() string {
 
 func (m *Mover) refreshCredential() {
 	const sigAzure = "sig="
-	nextRefreshInterval := time.Duration(0)
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
+	nextRefreshInterval := defaultRefreshInterval
 	retryDelay := 4*time.Second // 4 seconds
 	maxTries := 20
 	try := 1 // Number of retries to get the SAS. Starts at 1.
@@ -142,7 +142,6 @@ func (m *Mover) refreshCredential() {
 			m.config.configLock.Lock()
 			m.config.AzStorageSAS = sas
 			m.config.configLock.Unlock()
-		default:
 		}
 	}
 }
@@ -182,8 +181,6 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	}
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
-
-	m.refreshCredential()
 
 	total, err := core.Archive(core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
@@ -243,8 +240,6 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
-	m.refreshCredential()
-
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
@@ -284,8 +279,6 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
-
-	m.refreshCredential()
 
 	err = core.Remove(core.RemoveOptions{
 		AccountName:   m.config.AzStorageAccount,
