@@ -21,7 +21,6 @@ import (
 // test upload/download with the source data uploaded to the service from a file
 // this is a round-trip test where both upload and download are exercised together
 func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism int) {
-	cloud := azure.PublicCloud
 	// Set up file to upload
 	fileName := generateName("", 0)
 	filePath := filepath.Join(os.TempDir(), fileName)
