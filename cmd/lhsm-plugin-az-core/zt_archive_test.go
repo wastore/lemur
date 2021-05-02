@@ -11,15 +11,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/wastore/lemur/cmd/util"
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/azure"
+	"github.com/wastore/lemur/cmd/util"
 	chk "gopkg.in/check.v1"
 )
 
 // test upload/download with the source data uploaded to the service from a file
 // this is a round-trip test where both upload and download are exercised together
 func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism int) {
+	cloud := azure.PublicCloud
 	// Set up file to upload
 	fileName := generateName("", 0)
 	filePath := filepath.Join(os.TempDir(), fileName)
@@ -52,7 +54,8 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 		Parallelism:   uint16(parallelism),
 		BlockSize:     int64(blockSize),
 		MountRoot:     os.TempDir(),
-		HTTPClient: &http.Client{},
+		HTTPClient:    &http.Client{},
+		Environment:   &azure.PublicCloud,
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -75,7 +78,8 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
-		HTTPClient: &http.Client{},
+		HTTPClient: 	 &http.Client{},
+		Environment:     &azure.PublicCloud,
 	})
 
 	// Assert download was successful
@@ -138,7 +142,8 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		Parallelism:   uint16(3),
 		BlockSize:     int64(2048), //2M
 		MountRoot:     tempDir,
-		HTTPClient: &http.Client{},
+		HTTPClient:    &http.Client{},
+		Environment:   &azure.PublicCloud,
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))

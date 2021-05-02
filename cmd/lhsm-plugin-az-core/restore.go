@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/pkg/errors"
 	"github.com/wastore/lemur/cmd/util"
 )
@@ -26,6 +27,7 @@ type RestoreOptions struct {
 	ExportPrefix    string
 	Pacer           util.Pacer
 	HTTPClient      *http.Client
+	Environment     *azure.Environment
 }
 
 var maxRetryPerDownloadBody = 5
@@ -39,7 +41,8 @@ func Restore(o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
 
-	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))
+	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.%s/%s%s", o.AccountName,
+								o.Environment.StorageEndpointSuffix, blobPath, o.ResourceSAS))
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
 

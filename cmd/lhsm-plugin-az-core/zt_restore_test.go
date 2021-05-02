@@ -5,9 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/wastore/lemur/cmd/util"
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/azure"
+	"github.com/wastore/lemur/cmd/util"
 	chk "gopkg.in/check.v1"
 )
 
@@ -55,7 +56,8 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
-		HTTPClient: &http.Client{},
+		HTTPClient:      &http.Client{},
+		Environment:     &azure.PublicCloud,
 	})
 
 	// make sure we got the right info back

@@ -164,6 +164,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		ExportPrefix:  m.config.ExportPrefix,
 		HNSEnabled:    m.config.HNSEnabled,
 		HTTPClient:    m.httpClient,
+		Environment:   &m.config.Env,
 	})
 
 	if err != nil {
@@ -222,6 +223,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		ExportPrefix:    m.config.ExportPrefix,
 		Pacer:           pacer,
 		HTTPClient:      m.httpClient,
+		Environment:     &m.config.Env,
 	})
 
 	if err != nil {
@@ -259,6 +261,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,
 		Credential:    m.cred,
+		Environment:   &m.config.Env,
 	})
 
 	if err != nil {

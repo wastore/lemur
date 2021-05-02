@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -12,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/azure"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -44,6 +43,7 @@ type (
 		MountRoot             string `hcl:"mountroot"`
 		ExportPrefix          string `hcl:"exportprefix"`
 		azCreds               azblob.Credential
+		Env                   azure.Environment
 	}
 
 	archiveSet []*archiveConfig
@@ -60,6 +60,7 @@ type (
 		Bandwidth             int        `hcl:"bandwidth"`
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
+		AzureEnvironment      string     `hcl:"az_env"`
 	}
 )
 
@@ -100,13 +101,20 @@ func (a *archiveConfig) checkValid() error {
 	return nil
 }
 
+func (a *archiveConfig) setEnvironment(name string) error {
+	var err error
+	a.Env, err = azure.EnvironmentFromName(name)
+	return err
+}
+
 func (a *archiveConfig) checkAzAccess() (err error) {
 	const sigAzure string = "sig="
 	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
-	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
+	kvURL := "https://" + a.AzStorageKVName + "." + a.Env.KeyVaultDNSSuffix 
+	a.AzStorageSAS, err = util.GetKVSecret(kvURL, a.AzStorageKVSecretName)
 	// If return string does not contain "sig=", we're sure it is not SAS.
 	if !strings.Contains(a.AzStorageSAS, sigAzure) {
 		return errors.Wrap(err, "Invalid secret returned. SAS string expected.")
@@ -120,7 +128,9 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 }
 
 func (a *archiveConfig) setAccountType() (err error) {
-	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
+	// This remains commented till we xtend support to HNS accounts
+	/*
+	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.%s/%s", a.AzStorageAccount, a.Env.StorageEndpointSuffix, a.AzStorageSAS))
 	serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
 
 	resp, err := serviceURL.GetAccountInfo(context.Background())
@@ -129,6 +139,9 @@ func (a *archiveConfig) setAccountType() (err error) {
 	}
 
 	a.HNSEnabled = resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
+	*/
+
+	a.HNSEnabled = false
 
 	return nil
 }
@@ -302,9 +315,13 @@ func main() {
 		if err = ac.checkValid(); err != nil {
 			alert.Abort(errors.Wrap(err, "Invalid configuration"))
 		}
+		if err = ac.setEnvironment(cfg.AzureEnvironment); err != nil {
+			alert.Warnf("Failed to parse Azure environment, setting environment to AZUZREPUBLICCLOUD")
+			ac.setEnvironment(azure.PublicCloud.Name)
+		}
 		if err = ac.checkAzAccess(); err != nil {
 			alert.Abort(errors.Wrap(err, "Az access check failed"))
-		}
+		} 
 		if err = ac.setAccountType(); err != nil {
 			alert.Abort(errors.Wrap(err, "Failed to set account type"))
 		}

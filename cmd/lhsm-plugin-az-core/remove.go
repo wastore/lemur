@@ -8,6 +8,7 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/wastore/lemur/cmd/util"
 )
 
@@ -18,13 +19,15 @@ type RemoveOptions struct {
 	BlobName      string
 	ExportPrefix  string
 	Credential    azblob.Credential
+	Environment   *azure.Environment
 }
 
 func Remove(o RemoveOptions) error {
 	ctx := context.TODO()
 	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
 	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, blobPath, o.ResourceSAS))
+	u, _:= url.Parse(fmt.Sprintf("https://%s.blob.%s/%s%s", o.AccountName,
+								o.Environment.StorageEndpointSuffix, blobPath, o.ResourceSAS))
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Removing %s.", u.String()))
 

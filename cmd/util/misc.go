@@ -77,7 +77,7 @@ func NewPipeline(ctx context.Context, c azblob.Credential, p Pacer, o azblob.Pip
 
 //GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
 //Uses MSI auth to login
-func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
+func GetKVSecret(kvURLString, kvSecretName string) (secret string, err error) {
 	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
 	if err != nil {
 		return "", err
@@ -87,7 +87,7 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 	basicClient.Authorizer = authorizer
 
 	ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
-	secretResp, err := basicClient.GetSecret(ctx, "https://"+kvName+".vault.azure.net", kvSecretName, "")
+	secretResp, err := basicClient.GetSecret(ctx, kvURLString, kvSecretName, "")
 	if err != nil {
 		return "", err
 	}
