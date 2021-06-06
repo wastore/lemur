@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"sync"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 
@@ -29,6 +30,7 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
+		configLock            sync.Mutex //currently only SAS is protected by this lock
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		HNSEnabled            bool
 		AzStorageKVName       string `hcl:"az_kv_name"`
@@ -43,6 +45,7 @@ type (
 		Bandwidth             int    `hcl:"bandwidth"`
 		MountRoot             string `hcl:"mountroot"`
 		ExportPrefix          string `hcl:"exportprefix"`
+		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
 		azCreds               azblob.Credential
 	}
 
@@ -106,6 +109,9 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
+	a.configLock.Lock()
+	defer a.configLock.Unlock()
+
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
 	// If return string does not contain "sig=", we're sure it is not SAS.
 	if !strings.Contains(a.AzStorageSAS, sigAzure) {
@@ -168,6 +174,11 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	a.Bandwidth = g.Bandwidth
 	a.MountRoot = g.MountRoot
 	a.ExportPrefix = g.ExportPrefix
+
+	if _, err := time.ParseDuration(a.CredRefreshInterval); err != nil {
+		//Empty string or could not parse. We'll choose a default of 24hrs
+		a.CredRefreshInterval = "24h"
+	}
 }
 
 func (c *azConfig) Merge(other *azConfig) *azConfig {
