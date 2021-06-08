@@ -1,6 +1,7 @@
 package lhsm_plugin_az_core
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,16 +47,18 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
-	blobName = containerName + "/" + blobName
+	blobName = blobName
+	blobEndURL := fmt.Sprintf("https://%s.blob.core.windows.net/",account)
 	count, err := Restore(RestoreOptions{
 		AccountName:     account,
-		ContainerName:   "",
+		BlobEndpointURL: blobEndURL,
+		ContainerName:   containerName,
 		BlobName:        blobName,
 		DestinationPath: destination,
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
-		HTTPClient: &http.Client{},
+		HTTPClient:      &http.Client{},
 	})
 
 	// make sure we got the right info back
