@@ -18,31 +18,55 @@ import (
 )
 
 type ArchiveOptions struct {
-	AccountName   string
-	ContainerName string
-	ResourceSAS   string
-	MountRoot     string
-	BlobName      string
-	SourcePath    string
-	Credential    azblob.Credential
-	Parallelism   uint16
-	BlockSize     int64
-	Pacer         util.Pacer
-	ExportPrefix  string
-	HNSEnabled    bool
-	HTTPClient    *http.Client
+	AccountName     string
+	BlobEndpointURL string
+	DFSEndpointURL  string
+	ContainerName   string
+	ResourceSAS     string
+	MountRoot       string
+	BlobName        string
+	SourcePath      string
+	Credential      azblob.Credential
+	Parallelism     uint16
+	BlockSize       int64
+	Pacer           util.Pacer
+	ExportPrefix    string
+	HNSEnabled      bool
+	HTTPClient      *http.Client
 }
 
-const blobEndPoint string = "https://%s.blob.core.windows.net/"
-const dfsEndPoint string = "https://%s.dfs.core.windows.net/"
 const parallelDirCount = 64 // Number parallel dir metadata uploads
 
 func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, err error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	cURL, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-	containerURL := azblob.NewContainerURL(*cURL, p)
-	blobURL := containerURL.NewBlockBlobURL(blobPath)
+	var aclResp *azblob.BlobGetAccessControlResponse
+	sURL, _ := url.Parse(o.BlobEndpointURL + o.ResourceSAS)
+	dfsServiceURL, _ := url.Parse(o.DFSEndpointURL + o.ResourceSAS)
+	blobURL := azblob.NewServiceURL(*sURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(blobPath)
+	dfsURL := azblob.NewServiceURL(*dfsServiceURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(blobPath)
 	meta := azblob.Metadata{}
+
+	getACLResp := func(path string) (*azblob.BlobGetAccessControlResponse, error) {
+		return dfsURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
+	}
+
+	setACLResp := func(path string) error {
+		acl := aclResp.XMsACL()
+		owner := aclResp.XMsOwner()
+		group := aclResp.XMsGroup()
+		permissions := aclResp.XMsPermissions()
+		_, err := dfsURL.SetAccessControl(ctx, nil, nil, nil, nil, nil, &acl, nil, nil, nil, nil, nil)
+		if err != nil {
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set Access Control: %s", blobPath, err.Error()))
+			return err
+		}
+		_, err = dfsURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, nil, nil, nil, nil, nil, nil)
+		if err != nil {
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set owner: %s", blobPath, err.Error()))
+			return err
+		}
+		return nil
+	}
 
 	//Get owner, group and perms
 	fileInfo, err := os.Stat(path.Join(o.MountRoot, blobPath))
@@ -58,12 +82,9 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	}
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
-	var getACLResp *azblob.BlobGetAccessControlResponse
 
 	if o.HNSEnabled {
-		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
-		getACLResp, err = dfsURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
+		aclResp, err = getACLResp(blobPath)
 		if stgErr, ok := err.(azblob.StorageError); err != nil || ok && stgErr.ServiceCode() != azblob.ServiceCodeBlobNotFound {
 			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", dfsURL.URL().Path, err.Error()))
 			return 0, err
@@ -95,21 +116,9 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		return 0, err
 	}
 
-	if o.HNSEnabled && getACLResp != nil {
-		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
-		acl := getACLResp.XMsACL()
-		owner := getACLResp.XMsOwner()
-		group := getACLResp.XMsGroup()
-		permissions := getACLResp.XMsPermissions()
-		_, err := dfsURL.SetAccessControl(ctx, nil, nil, nil, nil, nil, &acl, nil, nil, nil, nil, nil)
+	if o.HNSEnabled && aclResp != nil {
+		err = setACLResp(blobPath)
 		if err != nil {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set Access Control: %s", blobPath, err.Error()))
-			return 0, err
-		}
-		_, err = dfsURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, nil, nil, nil, nil, nil, nil)
-		if err != nil {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set owner: %s", blobPath, err.Error()))
 			return 0, err
 		}
 	}

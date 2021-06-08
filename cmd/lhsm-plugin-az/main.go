@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"path"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
-	"sync"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 
@@ -31,9 +31,11 @@ type (
 		Name                  string `hcl:",key"`
 		ID                    int
 		configLock            sync.Mutex //currently only SAS is protected by this lock
-		AzStorageAccount      string `hcl:"az_storage_account"`
+		AzStorageAccount      string     `hcl:"az_storage_account"`
+		BlobEndpointURL       string
+		DFSEndpointURL        string
 		HNSEnabled            bool
-		AzStorageKVName       string `hcl:"az_kv_name"`
+		AzStorageKVURL        string `hcl:"az_kv_url"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string
 		Endpoint              string
@@ -54,7 +56,9 @@ type (
 	azConfig struct {
 		NumThreads            int        `hcl:"num_threads"`
 		AzStorageAccount      string     `hcl:"az_storage_account"`
-		AzStorageKVName       string     `hcl:"az_kv_name"`
+		AzBlobEndpointURL     string     `hcl:"az_blob_ep_url"`
+		AzDFSEndpointURL      string     `hcl:"az_dfs_ep_url"`
+		AzStorageKVURL        string     `hcl:"az_kv_url"`
 		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
 		Endpoint              string     `hcl:"endpoint"`
 		Region                string     `hcl:"region"`
@@ -82,6 +86,18 @@ func (a *archiveConfig) String() string {
 func (a *archiveConfig) checkValid() error {
 	var errors []string
 
+	blobURL, err := url.ParseRequestURI(a.BlobEndpointURL);
+	if err != nil || blobURL.Scheme != "https" || blobURL.Host == "" || blobURL.Path != "/" {
+		errors = append(errors, "Invalid URL specified for blob endpoint")
+	}
+
+	if a.DFSEndpointURL != "" {
+		dfsURL, err := url.ParseRequestURI(a.DFSEndpointURL); 
+		if err != nil || dfsURL.Scheme != "https" || dfsURL.Host == "" || dfsURL.Path != "/" {
+			errors = append(errors, "Invalid URL specified for dfs endpoint")
+		}
+	}
+
 	if a.Container == "" {
 		errors = append(errors, fmt.Sprintf("Archive %s: Container not set", a.Name))
 	}
@@ -105,14 +121,14 @@ func (a *archiveConfig) checkValid() error {
 
 func (a *archiveConfig) checkAzAccess() (err error) {
 	const sigAzure string = "sig="
-	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
+	if a.AzStorageKVURL == "" || a.AzStorageKVSecretName == "" {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
 	a.configLock.Lock()
 	defer a.configLock.Unlock()
 
-	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
+	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVURL, a.AzStorageKVSecretName)
 	// If return string does not contain "sig=", we're sure it is not SAS.
 	if !strings.Contains(a.AzStorageSAS, sigAzure) {
 		return errors.Wrap(err, "Invalid secret returned. SAS string expected.")
@@ -126,10 +142,10 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 }
 
 func (a *archiveConfig) setAccountType() (err error) {
-	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
-	serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
+	sURL, _ := url.Parse(a.BlobEndpointURL+a.AzStorageSAS)
+	containerURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{})).NewContainerURL(a.Container)
 
-	resp, err := serviceURL.GetAccountInfo(context.Background())
+	resp, err := containerURL.GetAccountInfo(context.Background())
 	if err != nil {
 		return err
 	}
@@ -146,8 +162,16 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 		a.AzStorageAccount = g.AzStorageAccount
 	}
 
-	if a.AzStorageKVName == "" {
-		a.AzStorageKVName = g.AzStorageKVName
+	if a.BlobEndpointURL == "" {
+		a.BlobEndpointURL = g.AzBlobEndpointURL
+	}
+
+	if a.DFSEndpointURL == "" {
+		a.DFSEndpointURL = g.AzDFSEndpointURL
+	}
+
+	if a.AzStorageKVURL == "" {
+		a.AzStorageKVURL = g.AzStorageKVURL
 	}
 
 	if a.AzStorageKVSecretName == "" {
@@ -209,9 +233,19 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.AzStorageAccount = other.AzStorageAccount
 	}
 
-	result.AzStorageKVName = c.AzStorageKVName
-	if other.AzStorageKVName != "" {
-		result.AzStorageKVName = other.AzStorageKVName
+	result.AzBlobEndpointURL = c.AzBlobEndpointURL
+	if other. AzBlobEndpointURL != "" {
+		result.AzBlobEndpointURL = other.AzBlobEndpointURL
+	}
+
+	result.AzDFSEndpointURL = c.AzDFSEndpointURL
+	if other.AzDFSEndpointURL != "" {
+		result.AzDFSEndpointURL = other.AzDFSEndpointURL
+	}
+
+	result.AzStorageKVURL = c.AzStorageKVURL
+	if other.AzStorageKVURL != "" {
+		result.AzStorageKVURL = other.AzStorageKVURL
 	}
 
 	result.AzStorageKVSecretName = c.AzStorageKVSecretName

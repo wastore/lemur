@@ -16,6 +16,7 @@ import (
 
 type RestoreOptions struct {
 	AccountName     string
+	BlobEndpointURL string
 	ContainerName   string
 	ResourceSAS     string
 	BlobName        string
@@ -37,13 +38,12 @@ func Restore(o RestoreOptions) (int64, error) {
 	defer cancel()
 
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
+	blobPath := path.Join(o.ExportPrefix, o.BlobName)
+	sURL, _ := url.Parse(o.BlobEndpointURL + o.ResourceSAS)
+	blobURL := azblob.NewServiceURL(*sURL, p).NewContainerURL(o.ContainerName).NewBlobURL(blobPath)
 
-	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", blobURL.String(), o.DestinationPath))
 
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
-
-	blobURL := azblob.NewBlobURL(*u, p)
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetProperties on %s failed", o.BlobName)
@@ -59,7 +59,7 @@ func Restore(o RestoreOptions) (int64, error) {
 			Parallelism: o.Parallelism,
 			RetryReaderOptionsPerBlock: azblob.RetryReaderOptions{
 				MaxRetryRequests: maxRetryPerDownloadBody,
-				NotifyFailedRead: util.NewReadLogFunc(u.String()),
+				NotifyFailedRead: util.NewReadLogFunc(blobURL.String()),
 			},
 		})
 

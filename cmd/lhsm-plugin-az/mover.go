@@ -26,20 +26,20 @@ import (
 
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
-	name                string
-	cred                azblob.Credential
-	httpClient          *http.Client
-	config              *archiveConfig
-	forceSASRefresh     chan bool
+	name            string
+	cred            azblob.Credential
+	httpClient      *http.Client
+	config          *archiveConfig
+	forceSASRefresh chan bool
 }
 
 // AzMover returns a new *Mover
 func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mover {
 	return &Mover{
-		name:                fmt.Sprintf("az-%d", archiveID),
-		cred:                creds,
-		config:              cfg,
-		httpClient: 		 &http.Client{
+		name:   fmt.Sprintf("az-%d", archiveID),
+		cred:   creds,
+		config: cfg,
+		httpClient: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:           0, // No limit
 				MaxIdleConnsPerHost:    cfg.NumThreads,
@@ -47,11 +47,11 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 				TLSHandshakeTimeout:    10 * time.Second,
 				ExpectContinueTimeout:  1 * time.Second,
 				DisableKeepAlives:      false,
-				DisableCompression:     true, 
+				DisableCompression:     true,
 				MaxResponseHeaderBytes: 0,
 			},
 		},
-		forceSASRefresh:    make(chan bool),
+		forceSASRefresh: make(chan bool),
 	}
 }
 
@@ -98,14 +98,14 @@ func (m *Mover) refreshCredential() {
 	const sigAzure = "sig="
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 	nextRefreshInterval := defaultRefreshInterval
-	retryDelay := 4*time.Second // 4 seconds
+	retryDelay := 4 * time.Second // 4 seconds
 	maxTries := 20
 	try := 1 // Number of retries to get the SAS. Starts at 1.
 
 	for {
 		select {
-		case <- time.After(nextRefreshInterval):
-			sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+		case <-time.After(nextRefreshInterval):
+			sas, err := util.GetKVSecret(m.config.AzStorageKVURL, m.config.AzStorageKVSecretName)
 
 			if err == nil && !strings.Contains(sas, sigAzure) {
 				err = fmt.Errorf("invalid SAS returned")
@@ -113,14 +113,14 @@ func (m *Mover) refreshCredential() {
 
 			if err != nil {
 
-				util.Log(pipeline.LogError,	fmt.Sprintf(
-							"Failed to update SAS. Falling back to previous SAS.\nReason: %s, try: %d",
-							err, try))
-				
-				/* 
+				util.Log(pipeline.LogError, fmt.Sprintf(
+					"Failed to update SAS. Falling back to previous SAS.\nReason: %s, try: %d",
+					err, try))
+
+				/*
 				 * Failed to update SAS. We'll retry with exponential delay.
 				 */
-				if (try <= maxTries) {
+				if try <= maxTries {
 					nextRefreshInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
 					try++
 				} else {
@@ -129,8 +129,8 @@ func (m *Mover) refreshCredential() {
 					try = 1
 				}
 				util.Log(pipeline.LogError, fmt.Sprintf(
-							"Next refresh at %s", 
-							time.Now().Add(nextRefreshInterval).String()))
+					"Next refresh at %s",
+					time.Now().Add(nextRefreshInterval).String()))
 				continue
 			}
 
@@ -183,19 +183,21 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileKey := m.destination(fileID)
 
 	total, err := core.Archive(core.ArchiveOptions{
-		AccountName:   m.config.AzStorageAccount,
-		ContainerName: m.config.Container,
-		ResourceSAS:   m.getSASToken(),
-		MountRoot:     m.config.MountRoot,
-		BlobName:      fileKey,
-		Credential:    m.cred,
-		SourcePath:    action.PrimaryPath(),
-		Parallelism:   uint16(m.config.NumThreads),
-		BlockSize:     m.config.UploadPartSize,
-		Pacer:         pacer,
-		ExportPrefix:  m.config.ExportPrefix,
-		HNSEnabled:    m.config.HNSEnabled,
-		HTTPClient:    m.httpClient,
+		AccountName:     m.config.AzStorageAccount,
+		BlobEndpointURL: m.config.BlobEndpointURL,
+		DFSEndpointURL:  m.config.DFSEndpointURL,
+		ContainerName:   m.config.Container,
+		ResourceSAS:     m.getSASToken(),
+		MountRoot:       m.config.MountRoot,
+		BlobName:        fileKey,
+		Credential:      m.cred,
+		SourcePath:      action.PrimaryPath(),
+		Parallelism:     uint16(m.config.NumThreads),
+		BlockSize:       m.config.UploadPartSize,
+		Pacer:           pacer,
+		ExportPrefix:    m.config.ExportPrefix,
+		HNSEnabled:      m.config.HNSEnabled,
+		HTTPClient:      m.httpClient,
 	})
 
 	if err != nil {
@@ -242,6 +244,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
+		BlobEndpointURL: m.config.BlobEndpointURL,
 		ContainerName:   container,
 		ResourceSAS:     m.getSASToken(),
 		BlobName:        srcObj,
@@ -281,12 +284,13 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	err = core.Remove(core.RemoveOptions{
-		AccountName:   m.config.AzStorageAccount,
-		ContainerName: container,
-		ResourceSAS:   m.getSASToken(),
-		BlobName:      srcObj,
-		ExportPrefix:  m.config.ExportPrefix,
-		Credential:    m.cred,
+		AccountName:     m.config.AzStorageAccount,
+		BlobEndpointURL: m.config.BlobEndpointURL,
+		ContainerName:   container,
+		ResourceSAS:     m.getSASToken(),
+		BlobName:        srcObj,
+		ExportPrefix:    m.config.ExportPrefix,
+		Credential:      m.cred,
 	})
 
 	if err != nil {

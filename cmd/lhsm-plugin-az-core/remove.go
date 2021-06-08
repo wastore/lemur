@@ -12,24 +12,24 @@ import (
 )
 
 type RemoveOptions struct {
-	AccountName   string
-	ContainerName string
-	ResourceSAS   string
-	BlobName      string
-	ExportPrefix  string
-	Credential    azblob.Credential
+	AccountName     string
+	BlobEndpointURL string
+	ContainerName   string
+	ResourceSAS     string
+	BlobName        string
+	ExportPrefix    string
+	Credential      azblob.Credential
 }
 
 func Remove(o RemoveOptions) error {
 	ctx := context.TODO()
 	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
-	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
-	u, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", o.AccountName, blobPath, o.ResourceSAS))
+	blobPath := path.Join(o.ExportPrefix, o.BlobName)
+	sURL, _ := url.Parse(o.BlobEndpointURL + o.ResourceSAS)
+	blobURL := azblob.NewServiceURL(*sURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(blobPath)
 
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Removing %s.", u.String()))
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Removing %s.", blobURL.String()))
 
-	// fetch the properties first so that we know how big the source blob is
-	blobURL := azblob.NewBlobURL(*u, p)
 	_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionInclude, azblob.BlobAccessConditions{})
 	return err
 }
