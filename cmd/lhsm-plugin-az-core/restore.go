@@ -55,7 +55,7 @@ func Restore(o RestoreOptions) (int64, error) {
 	err = azblob.DownloadBlobToFile(
 		ctx, blobURL, 0, 0, file,
 		azblob.DownloadFromBlobOptions{
-			BlockSize:   o.BlockSize,
+			BlockSize:   util.GetBlockSize(contentLen, o.BlockSize),
 			Parallelism: o.Parallelism,
 			RetryReaderOptionsPerBlock: azblob.RetryReaderOptions{
 				MaxRetryRequests: maxRetryPerDownloadBody,

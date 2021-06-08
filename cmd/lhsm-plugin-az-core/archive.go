@@ -79,12 +79,14 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		meta["hdi_isfolder"] = "true"
 		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
 	} else {
+		fi, _ := os.Stat(path.Join(o.MountRoot, blobPath))
 		file, _ := os.Open(path.Join(o.MountRoot, blobPath))
 		defer file.Close()
+
 		_, err = azblob.UploadFileToBlockBlob(
 			ctx, file, blobURL,
 			azblob.UploadToBlockBlobOptions{
-				BlockSize:   o.BlockSize,
+				BlockSize:   util.GetBlockSize(fi.Size(), o.BlockSize),
 				Parallelism: o.Parallelism,
 				Metadata:    meta,
 			})
