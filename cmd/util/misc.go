@@ -94,3 +94,26 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 
 	return *secretResp.Value, nil
 }
+
+func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
+	blockSizeThreshold := int64(256 * 1024 * 1024) /* 256 MB */
+	blockSize = minBlockSize
+
+	/* We should not perform checks on filesize, block size limitation here. Those are performed in SDK
+	 * and take care of themselves when limits change
+	 */
+
+	for ; uint32(filesize/blockSize) > azblob.BlockBlobMaxBlocks; blockSize = 2 * blockSize {
+		if blockSize > blockSizeThreshold {
+			/*
+			 * For a RAM usage of 0.5G/core, we would have 4G memory on typical 8 core device, meaning at a blockSize of 256M,
+			 * we can have 4 blocks in core, waiting for a disk or n/w operation. Any higher block size would *sort of*
+			 * serialize n/w and disk operations, and is better avoided.
+			 */
+			blockSize = filesize / azblob.BlockBlobMaxBlocks
+			break
+			}
+	}
+
+	return blockSize
+}
