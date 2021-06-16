@@ -23,6 +23,7 @@ package util
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -77,7 +78,10 @@ func NewPipeline(ctx context.Context, c azblob.Credential, p Pacer, o azblob.Pip
 
 //GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
 //Uses MSI auth to login
-func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
+func GetKVSecret(kvURL, kvSecretName string) (secret string, err error) {
+	if _, err := url.Parse(kvURL); err != nil {
+		return "", err
+	}
 	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
 	if err != nil {
 		return "", err
@@ -87,7 +91,7 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 	basicClient.Authorizer = authorizer
 
 	ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
-	secretResp, err := basicClient.GetSecret(ctx, "https://"+kvName+".vault.azure.net", kvSecretName, "")
+	secretResp, err := basicClient.GetSecret(ctx, kvURL, kvSecretName, "")
 	if err != nil {
 		return "", err
 	}

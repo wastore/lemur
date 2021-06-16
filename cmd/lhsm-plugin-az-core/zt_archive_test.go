@@ -43,8 +43,10 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
+	blobEndURL := fmt.Sprintf("https://%s.blob.core.windows.net/",account)
 	count, err := Archive(ArchiveOptions{
 		AccountName:   account,
+		BlobEndpointURL: blobEndURL,
 		ContainerName: containerName,
 		BlobName:      fileName,
 		SourcePath:    filePath,
@@ -65,12 +67,12 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	defer destFile.Close()
 	defer os.Remove(destFileName)
 
-	blobName := containerName + "/" + fileName
 	// invoke restore to download the file back
 	count, err = Restore(RestoreOptions{
 		AccountName:     account,
-		ContainerName:   "",
-		BlobName:        blobName,
+		BlobEndpointURL: blobEndURL,
+		ContainerName:   containerName,
+		BlobName:        fileName,
 		DestinationPath: destFilePath,
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
@@ -128,9 +130,11 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	// Upload the file to a block blob
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
+	blobEndURL := fmt.Sprintf("https://%s.blob.core.windows.net/",account)
 	c.Assert(err, chk.IsNil)
 	count, err := Archive(ArchiveOptions{
 		AccountName:   account,
+		BlobEndpointURL: blobEndURL,
 		ContainerName: containerName,
 		BlobName:      fileName,
 		SourcePath:    filePath,
