@@ -139,10 +139,9 @@ func Archive(o ArchiveOptions) (size int64, err error) {
 	parents = parents[:len(parents)-1] // Exclude the file itself (processed separately)
 	wg.Add(len(parents) + 1)           // Parent directories + 1 for the file.
 
-	blobName := path.Join(o.ExportPrefix, o.BlobName)
 	// Upload the file
 	go func() {
-		size, err = upload(ctx, o, blobName)
+		size, err = upload(ctx, o, o.BlobName)
 		wg.Done()
 	}()
 
@@ -150,7 +149,7 @@ func Archive(o ArchiveOptions) (size int64, err error) {
 	guard := make(chan struct{}, parallelDirCount) //Guard maintains bounded paralleism for uploading directories
 	defer close(guard)
 
-	blobPath := o.ExportPrefix
+	blobPath := ""
 	for _, currDir := range parents {
 		blobPath = path.Join(blobPath, currDir) //keep appending path to the url
 
