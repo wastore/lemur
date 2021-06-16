@@ -42,8 +42,8 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	var aclResp *azblob.BlobGetAccessControlResponse
 	sURL, _ := url.Parse(o.BlobEndpointURL + o.ResourceSAS)
 	dfsServiceURL, _ := url.Parse(o.DFSEndpointURL + o.ResourceSAS)
-	blobURL := azblob.NewServiceURL(*sURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(blobPath)
-	dfsURL := azblob.NewServiceURL(*dfsServiceURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(blobPath)
+	blobURL := azblob.NewServiceURL(*sURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
+	dfsURL := azblob.NewServiceURL(*dfsServiceURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
 	meta := azblob.Metadata{}
 
 	getACLResp := func(path string) (*azblob.BlobGetAccessControlResponse, error) {
