@@ -25,6 +25,7 @@ type RestoreOptions struct {
 	Parallelism     uint16
 	BlockSize       int64
 	ExportPrefix    string
+	BlobVersionID   string
 	Pacer           util.Pacer
 	HTTPClient      *http.Client
 }
@@ -44,6 +45,12 @@ func Restore(o RestoreOptions) (int64, error) {
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", blobURL.String(), o.DestinationPath))
 
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
+
+	blobURL := azblob.NewBlobURL(*u, p)
+	if o.BlobVersionID != "" {
+		blobURL = blobURL.WithVersionID(o.BlobVersionID)
+	}
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetProperties on %s failed", o.BlobName)

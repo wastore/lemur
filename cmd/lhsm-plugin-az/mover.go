@@ -253,6 +253,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		Parallelism:     uint16(m.config.NumThreads),
 		BlockSize:       m.config.UploadPartSize,
 		ExportPrefix:    m.config.ExportPrefix,
+		BlobVersionID:   action.BlobVersionID(),
 		Pacer:           pacer,
 		HTTPClient:      m.httpClient,
 	})

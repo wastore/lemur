@@ -38,6 +38,7 @@ type (
 		Hash  []byte
 		URL   string
 		Data  []byte
+		Version string
 	}
 
 	// ActionData is extra data passed to the Agent by policy engine
@@ -164,6 +165,7 @@ func (action *Action) AsMessage() *pb.ActionItem {
 		Hash:        action.Hash,
 		Url:         action.URL,
 		Data:        action.Data,
+		Version:     action.Version,
 	}
 
 	dfid, err := action.aih.DataFid()
