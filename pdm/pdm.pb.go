@@ -98,6 +98,7 @@ type ActionItem struct {
 	Uuid        string  `protobuf:"bytes,9,opt,name=uuid" json:"uuid,omitempty"`
 	Hash        []byte  `protobuf:"bytes,10,opt,name=hash,proto3" json:"hash,omitempty"`
 	Url         string  `protobuf:"bytes,12,opt,name=url" json:"url,omitempty"`
+	Version     string  `protobuf:"bytes,13,opt,name=version" json:"version,omitempty"`
 }
 
 func (m *ActionItem) Reset()                    { *m = ActionItem{} }

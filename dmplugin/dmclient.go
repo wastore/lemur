@@ -88,6 +88,8 @@ type (
 
 		// SetActualLength sets the action's actual file length
 		SetActualLength(length int64)
+
+		BlobVersionID() string
 	}
 
 	// Mover defines an interface for data mover implementations
@@ -254,6 +256,10 @@ func (a *dmAction) SetURL(u string) {
 // SetActualLength sets the action's actual file length
 func (a *dmAction) SetActualLength(length int64) {
 	a.actualLength = &length
+}
+
+func (a *dmAction) BlobVersionID()(versionID string) {
+	return a.item.Version
 }
 
 // NewMover returns a new *DataMoverClient
