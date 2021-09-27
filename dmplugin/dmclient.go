@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/pkg/errors"
 
 	"github.com/intel-hpdd/logging/alert"
@@ -181,7 +182,8 @@ func getErrno(err error) int32 {
 
 // Fail signals that the action has failed
 func (a *dmAction) fail(err error) error {
-	alert.Warnf("fail: id:%d %v", a.item.Id, err)
+	sanitizedErr := errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+	alert.Warnf("fail: id:%d %v", a.item.Id, sanitizedErr)
 	a.status <- &pb.ActionStatus{
 		Id:        a.item.Id,
 		Completed: true,
@@ -396,6 +398,10 @@ func (dm *DataMoverClient) getActionHandler(op pb.Command) (ActionHandler, error
 	return fn, nil
 }
 
+func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan *pb.ActionItem) {
+	actions <- item
+}
+
 func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 	for item := range actions {
 		action := &dmAction{
@@ -407,11 +413,26 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 		if err == nil {
 			err = actionFn(action)
 		}
-		// debug.Printf("completed (action: %v) %v ", action, ret)
-		if err != nil {
-			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+
+		if shouldRetry(err) {
+			dm.requeueItem(item, actions)
+		} else {
+			action.Finish(err)
 		}
-		action.Finish(err)
 	}
 	debug.Printf("%s: stopping", name)
+}
+
+
+//This needs to move to appropriate location, but we'll tolerate here
+//for now
+
+func shouldRetry(err error) bool {
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			return true
+		}
+	}
+
+	return false
 }

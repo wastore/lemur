@@ -201,7 +201,7 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 
 	if _, err := time.ParseDuration(a.CredRefreshInterval); err != nil {
 		//Empty string or could not parse. We'll choose a default of 24hrs
-		a.CredRefreshInterval = "24h"
+		a.CredRefreshInterval = "12h"
 	}
 }
 
