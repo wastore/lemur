@@ -35,8 +35,11 @@ import (
 
 	chk "gopkg.in/check.v1"
 
+	"github.com/Azure/azure-storage-azcopy/common"
 	"github.com/Azure/azure-storage-azcopy/azbfs"
+	"github.com/Azure/azure-storage-azcopy/ste"
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/wastore/lemur/cmd/util"
 )
 
 // Hookup to the testing framework
@@ -199,12 +202,12 @@ func createNewContainer(c *chk.C, bsu azblob.ServiceURL) (container azblob.Conta
 
 func initSTETest() {
 	jobID := common.NewJobID()
-		tuner := ste.NullConcurrencyTuner{FixedValue: 128}
-		logger := common.NewJobLogger(jobID, common.ELogLevel.Debug(), os.Getenv("LOG_PATH"), "")
-		logger.OpenLog()
-		common.AzcopyJobPlanFolder = os.Getenv("LOG_DIR")
+	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
+	logger := common.NewSysLogger(jobID, common.ELogLevel.Debug(), "lhsm-plugin-az")
+	logger.OpenLog()
+	common.AzcopyJobPlanFolder = os.Getenv("LOG_DIR")
 
-		jobMgr := ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
+	jobMgr := ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
 				 jobID,
 				 context.Background(),
 				 common.NewNullCpuMonitor(),
@@ -217,11 +220,11 @@ func initSTETest() {
 				 common.NewCacheLimiter(int64(64)),		 
 				 logger)
 
+	util.SetJobMgr(jobMgr)
 	util.ResetPartNum()
 	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
-
-	return jobMgr
 }
+
 //
 //func createNewBfsFile(c *chk.C, filesystem azbfs.FileSystemURL, prefix string) (file azbfs.FileURL, name string) {
 //	file, name = getBfsFileURL(c, filesystem, prefix)

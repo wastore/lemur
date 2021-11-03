@@ -13,6 +13,7 @@ import (
 )
 
 func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
+	initSTETest()
 	fileSize := 1024
 	blockSize := 2048
 	parallelism := 3

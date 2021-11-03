@@ -93,6 +93,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 }
 
 func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
+	initSTETest()
 	fileSize := 1024
 	blockSize := 2048
 	parallelism := 3
@@ -100,6 +101,7 @@ func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
 }
 
 func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
+	initSTETest()
 	fileName := generateName("", 0)
 	fileSize := 1024
 	tempDir := os.TempDir()
