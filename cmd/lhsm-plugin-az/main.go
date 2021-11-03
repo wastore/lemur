@@ -162,7 +162,7 @@ func (a *archiveConfig) setAccountType() (err error) {
 func (a *archiveConfig) initSTE() (err error) {
 	jobID := common.NewJobID()
 	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
-	logger := common.NewJobLogger(jobID, common.ELogLevel.Debug(), os.Getenv("LOG_PATH"), "")
+	logger := common.NewSysLogger(jobID, common.ELogLevel.Debug(), "lhsm-plugin-az")
 	logger.OpenLog()
 	common.AzcopyJobPlanFolder = os.Getenv("LOG_DIR")
 

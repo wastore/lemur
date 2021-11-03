@@ -185,7 +185,6 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		DestinationRoot: dstResource,
 		SourceRoot: srcResource,
 		Fpo: common.EFolderPropertiesOption.NoFolders(),
-		IsFinalPart: true,
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
@@ -273,7 +272,6 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		DestinationRoot: dstResource,
 		SourceRoot: srcResource,
 		Fpo: common.EFolderPropertiesOption.NoFolders(),
-		IsFinalPart: true,
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
