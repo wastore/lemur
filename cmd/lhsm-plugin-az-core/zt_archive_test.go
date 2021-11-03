@@ -162,7 +162,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		}
 		group := fmt.Sprintf("%d", info.Sys().(*syscall.Stat_t).Gid)
 
-		props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
+		props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 		c.Assert(err, chk.Equals, nil)
 
 		meta := props.NewMetadata()

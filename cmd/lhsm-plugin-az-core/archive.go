@@ -39,17 +39,18 @@ const parallelDirCount = 64 // Number parallel dir metadata uploads
 
 func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, err error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	var aclResp *azblob.BlobGetAccessControlResponse
+	//var aclResp *azblob.BlobGetAccessControlResponse
 	sURL, _ := url.Parse(o.BlobEndpointURL + o.ResourceSAS)
-	dfsServiceURL, _ := url.Parse(o.DFSEndpointURL + o.ResourceSAS)
+	//dfsServiceURL, _ := url.Parse(o.DFSEndpointURL + o.ResourceSAS)
 	blobURL := azblob.NewServiceURL(*sURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
-	dfsURL := azblob.NewServiceURL(*dfsServiceURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
+	//dfsURL := azblob.NewServiceURL(*dfsServiceURL, p).NewContainerURL(o.ContainerName).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
 	meta := azblob.Metadata{}
 
+	/*
 	getACLResp := func(path string) (*azblob.BlobGetAccessControlResponse, error) {
 		return dfsURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
 	}
-
+	
 	setACLResp := func(path string) error {
 		acl := aclResp.XMsACL()
 		owner := aclResp.XMsOwner()
@@ -67,7 +68,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		}
 		return nil
 	}
-
+	*/
 	//Get owner, group and perms
 	fileInfo, err := os.Stat(path.Join(o.MountRoot, blobPath))
 	if err != nil {
@@ -83,6 +84,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 
+	/*
 	if o.HNSEnabled {
 		aclResp, err = getACLResp(blobPath)
 		if stgErr, ok := err.(azblob.StorageError); err != nil || ok && stgErr.ServiceCode() != azblob.ServiceCodeBlobNotFound {
@@ -90,6 +92,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 			return 0, err
 		}
 	}
+	*/
 
 	meta["permissions"] = fmt.Sprintf("%04o", permissions)
 	meta["modtime"] = modTime
@@ -98,12 +101,12 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
-		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
+		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 	} else {
-		fi, _ := os.Stat(path.Join(o.MountRoot, blobPath))
-		file, _ := os.Open(path.Join(o.MountRoot, blobPath))
-		defer file.Close()
 
+		err = util.Upload(path.Join(o.MountRoot, blobPath), blobURL.String(), o.BlockSize, meta)
+
+		/*
 		_, err = azblob.UploadFileToBlockBlob(
 			ctx, file, blobURL,
 			azblob.UploadToBlockBlobOptions{
@@ -111,6 +114,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 				Parallelism: o.Parallelism,
 				Metadata:    meta,
 			})
+		*/
 	}
 
 	if err != nil {
@@ -118,12 +122,14 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		return 0, err
 	}
 
+	/*
 	if o.HNSEnabled && aclResp != nil {
 		err = setACLResp(blobPath)
 		if err != nil {
 			return 0, err
 		}
 	}
+	*/
 
 	return fileInfo.Size(), err
 }

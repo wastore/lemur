@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"math"
 	"path"
 	"strings"
 	"sync"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
+	"github.com/Azure/azure-storage-azcopy/v10/common"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -49,6 +52,7 @@ type (
 		ExportPrefix          string `hcl:"exportprefix"`
 		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
 		azCreds               azblob.Credential
+		jobMgr                ste.IJobMgr
 	}
 
 	archiveSet []*archiveConfig
@@ -151,6 +155,36 @@ func (a *archiveConfig) setAccountType() (err error) {
 	}
 
 	a.HNSEnabled = resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
+
+	return nil
+}
+
+func (a *archiveConfig) initSTE() (err error) {
+	jobID := common.NewJobID()
+	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
+	logger := common.NewJobLogger(jobID, common.ELogLevel.Debug(), os.Getenv("LOG_PATH"), "")
+	logger.OpenLog()
+	common.AzcopyJobPlanFolder = os.Getenv("LOG_DIR")
+
+	a.jobMgr = ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
+				 jobID,
+				 context.Background(),
+				 common.NewNullCpuMonitor(),
+				 common.ELogLevel.Debug(),
+				 "Lustre",
+				 os.Getenv("LOG_DIR"), &tuner,
+				 ste.NewTokenBucketPacer(int64(a.Bandwidth * 1024 * 1024), 0),
+				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
+				 common.NewCacheLimiter(4 * 1024 * 1024 * 1024),
+				 common.NewCacheLimiter(int64(64)),		 
+				 logger)
+
+	/*
+	 This needs to be moved to a better location
+	*/
+	util.SetJobMgr(a.jobMgr)
+	util.ResetPartNum()
+	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
 
 	return nil
 }
@@ -353,6 +387,10 @@ func main() {
 		if err = ac.setAccountType(); err != nil {
 			alert.Abort(errors.Wrap(err, "Failed to set account type"))
 		}
+		if err = ac.initSTE(); err != nil {
+			alert.Abort(errors.Wrap(err, "Failed to initialize STE"))
+		}
+		alert.Warnf(common.GetLifecycleMgr().GetEnvironmentVariable(common.EEnvironmentVariable.DefaultServiceApiVersion()))
 	}
 
 	debug.Printf("AZMover configuration:\n%v", cfg)
