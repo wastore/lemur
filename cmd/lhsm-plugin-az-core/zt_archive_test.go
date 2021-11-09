@@ -91,6 +91,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 }
 
 func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
+	initSTETest()
 	fileSize := 1024
 	blockSize := 2048
 	parallelism := 3
@@ -98,6 +99,7 @@ func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
 }
 
 func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
+	initSTETest()
 	fileName := generateName("", 0)
 	fileSize := 1024
 	tempDir := os.TempDir()
@@ -158,7 +160,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		}
 		group := fmt.Sprintf("%d", info.Sys().(*syscall.Stat_t).Gid)
 
-		props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
+		props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 		c.Assert(err, chk.Equals, nil)
 
 		meta := props.NewMetadata()

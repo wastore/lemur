@@ -12,6 +12,7 @@ import (
 )
 
 func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
+	initSTETest()
 	fileSize := 1024
 	blockSize := 2048
 	parallelism := 3
@@ -29,7 +30,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	// stage the source blob with small amount of data
 	reader, srcData := getRandomDataAndReader(fileSize)
 	_, err := blobURL.Upload(ctx, reader, azblob.BlobHTTPHeaders{},
-		nil, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
+		nil, azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 	c.Assert(err, chk.IsNil)
 
 	// set up destination file

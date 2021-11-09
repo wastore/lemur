@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -44,24 +43,12 @@ func Restore(o RestoreOptions) (int64, error) {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
 
 	blobURL := azblob.NewBlobURL(*u, p)
-	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
+	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetProperties on %s failed", o.BlobName)
 	}
 	contentLen := blobProp.ContentLength()
-
-	file, _ := os.Create(o.DestinationPath)
-	defer file.Close()
-	err = azblob.DownloadBlobToFile(
-		ctx, blobURL, 0, 0, file,
-		azblob.DownloadFromBlobOptions{
-			BlockSize:   util.GetBlockSize(contentLen, o.BlockSize),
-			Parallelism: o.Parallelism,
-			RetryReaderOptionsPerBlock: azblob.RetryReaderOptions{
-				MaxRetryRequests: maxRetryPerDownloadBody,
-				NotifyFailedRead: util.NewReadLogFunc(u.String()),
-			},
-		})
+	err = util.Download(blobURL.String(), o.DestinationPath, o.BlockSize) 
 
 	return contentLen, err
 }

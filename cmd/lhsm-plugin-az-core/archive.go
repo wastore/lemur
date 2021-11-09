@@ -58,6 +58,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	}
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
+	/*
 	var getACLResp *azblob.BlobGetAccessControlResponse
 
 	if o.HNSEnabled {
@@ -69,6 +70,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 			return 0, err
 		}
 	}
+	*/
 
 	meta["permissions"] = fmt.Sprintf("%04o", permissions)
 	meta["modtime"] = modTime
@@ -77,12 +79,12 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
-		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
+		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 	} else {
-		fi, _ := os.Stat(path.Join(o.MountRoot, blobPath))
-		file, _ := os.Open(path.Join(o.MountRoot, blobPath))
-		defer file.Close()
 
+		err = util.Upload(path.Join(o.MountRoot, blobPath), blobURL.String(), o.BlockSize, meta)
+
+		/*
 		_, err = azblob.UploadFileToBlockBlob(
 			ctx, file, blobURL,
 			azblob.UploadToBlockBlobOptions{
@@ -90,6 +92,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 				Parallelism: o.Parallelism,
 				Metadata:    meta,
 			})
+		*/
 	}
 
 	if err != nil {
@@ -97,9 +100,10 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		return 0, err
 	}
 
+	/*
 	if o.HNSEnabled && getACLResp != nil {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
+		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
 		acl := getACLResp.XMsACL()
 		owner := getACLResp.XMsOwner()
 		group := getACLResp.XMsGroup()
@@ -115,6 +119,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 			return 0, err
 		}
 	}
+	*/
 
 	return fileInfo.Size(), err
 }
