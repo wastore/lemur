@@ -21,6 +21,7 @@ import (
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
@@ -63,6 +64,7 @@ type (
 		Bandwidth             int        `hcl:"bandwidth"`
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
+		EventFIFOPath         string     `hcl:"event_fifo_path"`
 	}
 )
 
@@ -239,6 +241,10 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.ExportPrefix = other.ExportPrefix
 	}
 
+	result.EventFIFOPath = c.EventFIFOPath
+	if other.EventFIFOPath != "" {
+		result.EventFIFOPath = other.EventFIFOPath
+	}
 	return result
 }
 
@@ -307,6 +313,13 @@ func main() {
 	if len(cfg.Archives) == 0 {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
 	}
+
+	rc, err := llapi.RegisterErrorCB(cfg.EventFIFOPath)
+	debug.Printf(fmt.Sprintf("</RegisterErrorCB(\"%s\" rc=%d) (plugin)>", cfg.EventFIFOPath, rc))
+	if rc != 0 || err != nil {
+		alert.Abort(errors.Wrap(err, "registering HSM event FIFO (plugin)"))
+	}
+	defer llapi.UnregisterErrorCB(cfg.EventFIFOPath)
 
 	for _, ac := range cfg.Archives {
 		ac.mergeGlobals(cfg)

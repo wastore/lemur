@@ -14,15 +14,16 @@ import (
 	"path"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/hcl"
 	"github.com/hashicorp/hcl/hcl/ast"
 	"github.com/pkg/errors"
 
-	"github.com/wastore/lemur/cmd/lhsmd/config"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/wastore/go-lustre/fs/spec"
+	"github.com/wastore/lemur/cmd/lhsmd/config"
 )
 
 var (
@@ -63,6 +64,7 @@ type (
 
 		Snapshots *snapshotConfig  `hcl:"snapshots" json:"snapshots"`
 		Transport *transportConfig `hcl:"transport" json:"transport"`
+		EventFIFOPath string `hcl:"event_fifo_path" json:"event_fifo_path"`
 	}
 )
 
@@ -231,6 +233,10 @@ func (c *Config) Merge(other *Config) *Config {
 		result.Transport = result.Transport.Merge(other.Transport)
 	}
 
+	result.EventFIFOPath = c.EventFIFOPath
+	if other.EventFIFOPath != "" {
+		result.EventFIFOPath = other.EventFIFOPath
+	}
 	return result
 }
 
