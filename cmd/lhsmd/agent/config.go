@@ -14,7 +14,6 @@ import (
 	"path"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/hcl"
 	"github.com/hashicorp/hcl/hcl/ast"
