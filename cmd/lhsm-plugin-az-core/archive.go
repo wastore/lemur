@@ -41,7 +41,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	cURL, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
 	containerURL := azblob.NewContainerURL(*cURL, p)
-	blobURL := containerURL.NewBlockBlobURL(blobPath)
+	blobURL := containerURL.NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
 	meta := azblob.Metadata{}
 
 	//Get owner, group and perms
@@ -62,7 +62,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if o.HNSEnabled {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
+		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
 		getACLResp, err = dfsURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
 		if stgErr, ok := err.(azblob.StorageError); err != nil || ok && stgErr.ServiceCode() != azblob.ServiceCodeBlobNotFound {
 			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", dfsURL.URL().Path, err.Error()))
@@ -99,7 +99,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if o.HNSEnabled && getACLResp != nil {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
+		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(path.Join(o.ExportPrefix, blobPath))
 		acl := getACLResp.XMsACL()
 		owner := getACLResp.XMsOwner()
 		group := getACLResp.XMsGroup()
