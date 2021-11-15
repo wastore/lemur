@@ -24,10 +24,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -127,32 +129,37 @@ func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
 }
 
 var jobMgr ste.IJobMgr
-var partNum common.PartNumber
+var globalPartNum uint32
+var partNumLock sync.Mutex
 
 func JobMgr() ste.IJobMgr {
 	return jobMgr
 }
 
-func NextPartNum() (ret common.PartNumber) {
-	ret = partNum
-	partNum = partNum + 1
-
-	return ret
-}
-
-func ResetPartNum() {
-	partNum = 0
-} 
-
 func SetJobMgr(jm ste.IJobMgr) {
 	jobMgr = jm
 }
 
+func NextPartNum() uint32 {
+	partNumLock.Lock()
+	defer partNumLock.Unlock()
+	if globalPartNum == math.MaxUint32 {
+		jobMgr.Reset(context.Background(), "Lustre")
+		globalPartNum = 0
+	}
+	ret :=  globalPartNum
+	globalPartNum = globalPartNum + 1
+	return ret
+}
+
+func RestPartNum() {
+	globalPartNum = 0
+}
 
 func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
 	srcResource, _ := cmd.SplitResourceString(filePath , common.ELocation.Local())
 	dstResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
-	partNum = NextPartNum()
+	p := common.PartNumber(NextPartNum())
 
 	fi, _ := os.Stat(filePath)
 
@@ -167,7 +174,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 
 	order := common.CopyJobPartOrderRequest {
 		JobID:           JobMgr().JobID(),
-		PartNum:         common.PartNumber(partNum),
+		PartNum:         p,
 		FromTo:          common.EFromTo.LocalBlob(),
 		ForceWrite:      common.EOverwriteOption.True(),
 		ForceIfReadOnly: false,
@@ -185,7 +192,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
-	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), 0, ste.DataSchemaVersion))
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
 	jppfn.Create(order)
 
 	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true)
@@ -198,16 +205,17 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	       FolderTransfer:       order.Transfers.FolderTransferCount})
 
        jobDone := false
+       var status common.JobStatus 
        for !jobDone {
-	       part0,_ := jobMgr.JobPartMgr(0)
-	       part0plan := part0.Plan().JobPartStatus()
-	       jobDone = part0plan.IsJobDone()
-	       time.Sleep(time.Second * 2)
+	       part,_ := jobMgr.JobPartMgr(p)
+	       status = part.Plan().JobPartStatus()
+	       jobDone = status.IsJobDone()
+	       time.Sleep(time.Second * 1)
        }
-
-       part, _ := jobMgr.JobPartMgr(partNum)
-       status := part.Plan().JobPartStatus()
-
+      
+       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
+	       Log(pipeline.LogError, err.Error())
+       }
        if status != common.EJobStatus.Completed() {
 	       return errors.New("STE Failed")
        }
@@ -219,7 +227,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 func Download(blobPath string, filePath string, blockSize int64) error {
 	dstResource, _ := cmd.SplitResourceString(filePath , common.ELocation.Local())
 	srcResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
-	partNum = NextPartNum()
+	p := common.PartNumber(NextPartNum())
 
 	getBlobProperties := func (blobPath string) (*azblob.BlobGetPropertiesResponse, error) {
 		rawURL, _ := url.Parse(blobPath)
@@ -254,7 +262,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 
 	order := common.CopyJobPartOrderRequest {
 		JobID:           JobMgr().JobID(),
-		PartNum:         common.PartNumber(partNum),
+		PartNum:         p,
 		FromTo:          common.EFromTo.BlobLocal(),
 		ForceWrite:      common.EOverwriteOption.True(),
 		ForceIfReadOnly: false,
@@ -272,7 +280,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
-	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), 0, ste.DataSchemaVersion))
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
 	jppfn.Create(order)
 
 	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true)
@@ -285,16 +293,17 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 	       FolderTransfer:       order.Transfers.FolderTransferCount})
 
        jobDone := false
+       var status common.JobStatus 
        for !jobDone {
-	       part0,_ := jobMgr.JobPartMgr(0)
-	       part0plan := part0.Plan().JobPartStatus()
-	       jobDone = part0plan.IsJobDone()
-	       time.Sleep(time.Second * 2)
+	       part,_ := jobMgr.JobPartMgr(p)
+	       status = part.Plan().JobPartStatus()
+	       jobDone = status.IsJobDone()
+	       time.Sleep(time.Second * 1)
        }
 
-       part, _ := jobMgr.JobPartMgr(partNum)
-       status := part.Plan().JobPartStatus()
-
+       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
+	       Log(pipeline.LogError, err.Error())
+       }
        if status != common.EJobStatus.Completed() {
 	       return errors.New("STE Failed")
        }

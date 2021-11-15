@@ -153,6 +153,7 @@ func (a *archiveConfig) initSTE() (err error) {
 	logger.OpenLog()
 	common.AzcopyJobPlanFolder = os.Getenv("COPYTOOL_LOG_DIR")
 
+	os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
 	if a.Bandwidth != 0 {
 		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth * 1024 * 1024), 0)
 	}
@@ -174,7 +175,7 @@ func (a *archiveConfig) initSTE() (err error) {
 	 This needs to be moved to a better location
 	*/
 	util.SetJobMgr(a.jobMgr)
-	util.ResetPartNum()
+	util.RestPartNum()
 	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
 
 	return nil
