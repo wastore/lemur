@@ -28,6 +28,7 @@ import (
 	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
+	rdbg "runtime/debug"
 )
 
 type (
@@ -162,21 +163,27 @@ func (a *archiveConfig) initSTE() (err error) {
 				 jobID,
 				 context.Background(),
 				 common.NewNullCpuMonitor(),
-				 common.ELogLevel.Info(),
+				 common.ELogLevel.Error(),
 				 "Lustre",
 				 os.Getenv("COPYTOOL_LOG_DIR"), &tuner,
 				 pacer,
 				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
-				 common.NewCacheLimiter(4 * 1024 * 1024 * 1024),
+				 common.NewCacheLimiter(2 * 1024 * 1024 * 1024),
 				 common.NewCacheLimiter(int64(64)),		 
 				 logger)
 
 	/*
 	 This needs to be moved to a better location
 	*/
+	go func() {
+		time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
+		rdbg.SetGCPercent(20)       // activate more aggressive/frequent GC than the default
+	}()
+
 	util.SetJobMgr(a.jobMgr)
 	util.RestPartNum()
 	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
+	common.GetLifecycleMgr().SetForceLogging()
 
 	return nil
 }
