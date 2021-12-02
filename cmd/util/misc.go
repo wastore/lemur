@@ -169,7 +169,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		EntityType:         common.EEntityType.File(),
 		LastModifiedTime:   fi.ModTime(),
 		SourceSize:         fi.Size(),
-		Metadata:           common.Metadata(meta),
+		Metadata:           common.FromAzBlobMetadataToCommonMetadata(meta),
 	}
 
 	order := common.CopyJobPartOrderRequest {
