@@ -315,7 +315,6 @@ func main() {
 	}
 
 	rc, err := llapi.RegisterErrorCB(cfg.EventFIFOPath)
-	debug.Printf(fmt.Sprintf("</RegisterErrorCB(\"%s\" rc=%d) (plugin)>", cfg.EventFIFOPath, rc))
 	if rc != 0 || err != nil {
 		alert.Abort(errors.Wrap(err, "registering HSM event FIFO (plugin)"))
 	}
