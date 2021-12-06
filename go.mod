@@ -22,7 +22,7 @@ require (
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
-	github.com/wastore/go-lustre v0.0.3
+	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
 	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
 	golang.org/x/sys v0.0.0-20200828194041-157a740278f4
 	google.golang.org/grpc v1.31.0

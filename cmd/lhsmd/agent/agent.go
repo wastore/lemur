@@ -84,6 +84,12 @@ func (ct *HsmAgent) Start(ctx context.Context) error {
 	ct.mu.Unlock()
 	ct.stats.Start(ctx)
 
+	rc, err := llapi.RegisterErrorCB(ct.config.EventFIFOPath)
+	debug.Printf(fmt.Sprintf("</RegisterErrorCB(\"%s\" rc=%d)>", ct.config.EventFIFOPath, rc))
+	if rc != 0 || err != nil {
+		return errors.Wrap(err, "registering HSM event FIFO")
+	}
+
 	if t, ok := transports[ct.config.Transport.Type]; ok {
 		if err := t.Init(ct.config, ct); err != nil {
 			return errors.Wrapf(err, "transport %q initialize failed", ct.config.Transport.Type)
@@ -119,6 +125,7 @@ func (ct *HsmAgent) Stop() {
 	ct.cancelFunc()
 	ct.mu.Unlock()
 	transports[ct.config.Transport.Type].Shutdown()
+	llapi.UnregisterErrorCB(ct.config.EventFIFOPath)
 	<-ct.stopComplete
 }
 
