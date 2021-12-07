@@ -29,20 +29,15 @@ require (
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
-	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
-	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
-	golang.org/x/sys v0.0.0-20200828194041-157a740278f4
-	google.golang.org/grpc v1.31.0
-	google.golang.org/protobuf v1.23.0
-	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 	github.com/stretchr/testify v1.7.0 // indirect
-	github.com/wastore/go-lustre v0.0.3
+	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
 	golang.org/x/crypto v0.0.0-20210812204632-0ba0e8f03122 // indirect
 	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
 	golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20210811021853-ddbe55d93216 // indirect
 	google.golang.org/grpc v1.40.0
+	google.golang.org/protobuf v1.27.1
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
