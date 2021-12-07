@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"io/ioutil"
 	"math/rand"
 	"net/url"
@@ -35,11 +36,12 @@ import (
 
 	chk "gopkg.in/check.v1"
 
-	"github.com/Azure/azure-storage-azcopy/common"
-	"github.com/Azure/azure-storage-azcopy/azbfs"
-	"github.com/Azure/azure-storage-azcopy/ste"
+	"github.com/Azure/azure-storage-azcopy/v10/common"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
+	"github.com/Azure/azure-storage-azcopy/v10/azbfs"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/lemur/cmd/util"
+	rdbg "runtime/debug"
 )
 
 // Hookup to the testing framework
@@ -58,6 +60,53 @@ const (
 	blobfsPrefix                 = "blobfs"
 	defaultBlobFSFileSizeInBytes = 1000
 )
+
+
+var azcopyTmpDir                 = os.TempDir()
+
+func initSTE() (err error) {
+        jobID := common.NewJobID()
+        tuner := ste.NullConcurrencyTuner{FixedValue: 128}
+        var pacer ste.PacerAdmin = ste.NewNullAutoPacer()
+        var logLevel common.LogLevel
+        common.AzcopyJobPlanFolder = azcopyTmpDir
+
+        if err := logLevel.Parse("debug"); err != nil {
+                logLevel = common.ELogLevel.Info()
+        }
+        logger := common.NewSysLogger(jobID, logLevel, "lhsm-plugin-az")
+        logger.OpenLog()
+
+        os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
+	jobMgr := ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
+                                 jobID,
+                                 context.Background(),
+                                 common.NewNullCpuMonitor(),
+                                 common.ELogLevel.Error(),
+                                 "Lustre",
+				 azcopyTmpDir,
+                                 &tuner,
+                                 pacer,
+                                 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
+                                 common.NewCacheLimiter(int64(2 * 1024 * 1024 * 1024)),
+                                 common.NewCacheLimiter(int64(64)),
+                                 logger)
+
+        /*
+         This needs to be moved to a better location
+        */
+        go func() {
+                time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
+                rdbg.SetGCPercent(20)       // activate more aggressive/frequent GC than the default
+        }()
+
+        util.SetJobMgr(jobMgr)
+        util.RestPartNum()
+        common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
+        common.GetLifecycleMgr().SetForceLogging()
+
+        return nil
+}
 
 // This function generates an entity name by concatenating the passed prefix,
 // the name of the test requesting the entity name, and the minute, second, and nanoseconds of the call.
@@ -158,6 +207,10 @@ func getRandomDataAndReader(n int) (*bytes.Reader, []byte) {
 	return bytes.NewReader(data), data
 }
 
+func getSASKey() string {
+	return os.Getenv("ACCOUNT_SAS")
+}
+
 func getAccountAndKey() (string, string) {
 	name := os.Getenv("ACCOUNT_NAME")
 	key := os.Getenv("ACCOUNT_KEY")
@@ -196,33 +249,6 @@ func createNewContainer(c *chk.C, bsu azblob.ServiceURL) (container azblob.Conta
 	c.Assert(err, chk.IsNil)
 	c.Assert(cResp.StatusCode(), chk.Equals, 201)
 	return container, name
-}
-
-
-
-func initSTETest() {
-	jobID := common.NewJobID()
-	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
-	logger := common.NewSysLogger(jobID, common.ELogLevel.Debug(), "lhsm-plugin-az")
-	logger.OpenLog()
-	common.AzcopyJobPlanFolder = os.Getenv("LOG_DIR")
-
-	jobMgr := ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
-				 jobID,
-				 context.Background(),
-				 common.NewNullCpuMonitor(),
-				 common.ELogLevel.Debug(),
-				 "Lustre",
-				 os.Getenv("LOG_DIR"), &tuner,
-				 ste.NewTokenBucketPacer(int64(a.Bandwidth * 1024 * 1024), 0),
-				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
-				 common.NewCacheLimiter(4 * 1024 * 1024 * 1024),
-				 common.NewCacheLimiter(int64(64)),		 
-				 logger)
-
-	util.SetJobMgr(jobMgr)
-	util.ResetPartNum()
-	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
 }
 
 //

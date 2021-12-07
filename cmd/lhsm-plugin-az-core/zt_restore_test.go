@@ -12,10 +12,10 @@ import (
 )
 
 func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
-	initSTETest()
 	fileSize := 1024
 	blockSize := 2048
 	parallelism := 3
+	initSTE()
 	performRestoreTest(c, fileSize, blockSize, parallelism)
 }
 
@@ -44,14 +44,16 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	util.InitJobLogger(pipeline.LogDebug)
 
 	// exercise restore
-	account, key := getAccountAndKey()
-	credential, err := azblob.NewSharedKeyCredential(account, key)
+	account, _ := getAccountAndKey()
+	credential := azblob.NewAnonymousCredential()
+	sas_key := getSASKey()
 	c.Assert(err, chk.IsNil)
 	blobName = containerName + "/" + blobName
 	count, err := Restore(RestoreOptions{
 		AccountName:     account,
 		ContainerName:   "",
 		BlobName:        blobName,
+		ResourceSAS:   sas_key,
 		DestinationPath: destination,
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),

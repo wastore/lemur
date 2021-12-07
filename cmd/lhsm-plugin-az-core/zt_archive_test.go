@@ -40,8 +40,9 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	util.InitJobLogger(pipeline.LogDebug)
 
 	// Upload the file to a block blob
-	account, key := getAccountAndKey()
-	credential, err := azblob.NewSharedKeyCredential(account, key)
+	account, _ := getAccountAndKey()
+	sas_key := getSASKey()
+	credential := azblob.NewAnonymousCredential()
 	c.Assert(err, chk.IsNil)
 	count, err := Archive(ArchiveOptions{
 		AccountName:   account,
@@ -49,6 +50,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 		BlobName:      fileName,
 		SourcePath:    filePath,
 		Credential:    credential,
+		ResourceSAS:   sas_key,
 		Parallelism:   uint16(parallelism),
 		BlockSize:     int64(blockSize),
 		MountRoot:     os.TempDir(),
@@ -73,6 +75,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 		BlobName:        blobName,
 		DestinationPath: destFilePath,
 		Credential:      credential,
+		ResourceSAS:     sas_key,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
 		HTTPClient: &http.Client{},
@@ -91,18 +94,18 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 }
 
 func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
-	initSTETest()
 	fileSize := 1024
 	blockSize := 2048
 	parallelism := 3
+	initSTE()
 	performUploadAndDownloadFileTest(c, fileSize, blockSize, parallelism)
 }
 
-func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
-	initSTETest()
+func (s *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	fileName := generateName("", 0)
 	fileSize := 1024
 	tempDir := os.TempDir()
+	initSTE()
 	pathWithManyDirs := "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/"
 	filePath := filepath.Join(pathWithManyDirs, fileName)
 
@@ -128,8 +131,9 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	util.InitJobLogger(pipeline.LogDebug)
 
 	// Upload the file to a block blob
-	account, key := getAccountAndKey()
-	credential, err := azblob.NewSharedKeyCredential(account, key)
+	account, _ := getAccountAndKey()
+	sas_key := getSASKey()
+	credential := azblob.NewAnonymousCredential()
 	c.Assert(err, chk.IsNil)
 	count, err := Archive(ArchiveOptions{
 		AccountName:   account,
@@ -137,6 +141,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		BlobName:      fileName,
 		SourcePath:    filePath,
 		Credential:    credential,
+		ResourceSAS:   sas_key,
 		Parallelism:   uint16(3),
 		BlockSize:     int64(2048), //2M
 		MountRoot:     tempDir,

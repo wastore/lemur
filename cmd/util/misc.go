@@ -172,6 +172,14 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		Metadata:           common.FromAzBlobMetadataToCommonMetadata(meta),
 	}
 
+	var metadata = ""
+	for k, v := range meta {
+		metadata = metadata + fmt.Sprintf("%s=%s;", k,v)
+	}
+	if len(metadata) > 0 { //Remove trailing ';'
+		metadata = metadata[:len(metadata)-1]
+	}
+
 	order := common.CopyJobPartOrderRequest {
 		JobID:           JobMgr().JobID(),
 		PartNum:         p,
@@ -184,6 +192,8 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		BlobAttributes: common.BlobTransferAttributes{
 				BlobType:                 common.EBlobType.BlockBlob(),
 				BlockSizeInBytes:         GetBlockSize(fi.Size(), blockSize),
+				Metadata:                 metadata,
+
 		},
 		CommandString:  "NONE",
 		DestinationRoot: dstResource,
