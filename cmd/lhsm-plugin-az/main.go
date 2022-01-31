@@ -3,23 +3,25 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"os/signal"
-	"math"
 	"path"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
-	"sync"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/Azure/azure-storage-azcopy/v10/ste"
 	"github.com/Azure/azure-storage-azcopy/v10/common"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
+
+	rdbg "runtime/debug"
 
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
@@ -28,7 +30,6 @@ import (
 	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
-	rdbg "runtime/debug"
 )
 
 type (
@@ -36,8 +37,9 @@ type (
 		Name                  string `hcl:",key"`
 		ID                    int
 		configLock            sync.Mutex //currently only SAS is protected by this lock
-		AzStorageAccount      string `hcl:"az_storage_account"`
+		AzStorageAccount      string     `hcl:"az_storage_account"`
 		HNSEnabled            bool
+		HNSOverride           string `hcl:"hns_override"`
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string
@@ -70,13 +72,13 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
+		HNSOverride           string     `hcl:"hns_override"`
 
 		/* STE Parameters */
-		PlanDirectory         string     `hcl:"plan_dir"`
-		CacheLimit            int        `hcl:"cache_limit"`
-		LogLevel              string     `hcl:"log_level"`
-		jobMgr                ste.IJobMgr
-
+		PlanDirectory string `hcl:"plan_dir"`
+		CacheLimit    int    `hcl:"cache_limit"`
+		LogLevel      string `hcl:"log_level"`
+		jobMgr        ste.IJobMgr
 	}
 )
 
@@ -140,16 +142,29 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 }
 
 func (a *archiveConfig) setAccountType() (err error) {
-	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
-	serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
 
-	resp, err := serviceURL.GetAccountInfo(context.Background())
-	if err != nil {
-		return err
+	if a.HNSOverride == "true" {
+		// Honor the override.
+		a.HNSEnabled = true
+		debug.Printf("Using HNSOverride==true")
+	} else if a.HNSOverride == "false" {
+		// Honor the override.
+		a.HNSEnabled = false
+		debug.Printf("Using HNSOverride==false")
+	} else {
+		// HNSOverride not specified or set to something invalie.  Figure it out.
+		debug.Printf("No HNSOverride, attempting to detect.")
+		sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
+		serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
+
+		resp, err := serviceURL.GetAccountInfo(context.Background())
+		if err != nil {
+			return err
+		}
+
+		debug.Printf("No HNSOverride, detected HNSEnabled==%d", resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true")
+		a.HNSEnabled = resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
 	}
-
-	a.HNSEnabled = resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
-
 	return nil
 }
 
@@ -188,6 +203,7 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	a.Bandwidth = g.Bandwidth
 	a.MountRoot = g.MountRoot
 	a.ExportPrefix = g.ExportPrefix
+	a.HNSOverride = g.HNSOverride
 
 	if _, err := time.ParseDuration(a.CredRefreshInterval); err != nil {
 		//Empty string or could not parse. We'll choose a default of 24hrs
@@ -260,8 +276,13 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
 
+	result.HNSOverride = c.HNSOverride
+	if other.HNSOverride != "" {
+		result.HNSOverride = other.HNSOverride
+	}
+
 	/* STE parameters */
-	result.CacheLimit = defaultSTEMemoryLimit 
+	result.CacheLimit = defaultSTEMemoryLimit
 	if other.CacheLimit != 0 {
 		result.CacheLimit = other.CacheLimit
 	}
@@ -275,7 +296,7 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	if other.PlanDirectory != "" {
 		result.PlanDirectory = other.PlanDirectory
 	}
-	
+
 	return result
 }
 
@@ -294,29 +315,29 @@ func (a *azConfig) initSTE() (err error) {
 
 	os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
 	if a.Bandwidth != 0 {
-		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth * 1024 * 1024), 0)
+		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth*1024*1024), 0)
 	}
 
 	a.jobMgr = ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
-				 jobID,
-				 context.Background(),
-				 common.NewNullCpuMonitor(),
-				 common.ELogLevel.Error(),
-				 "Lustre",
-				 a.PlanDirectory,
-				 &tuner,
-				 pacer,
-				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
-				 common.NewCacheLimiter(int64(a.CacheLimit * 1024 * 1024 * 1024)),
-				 common.NewCacheLimiter(int64(64)),		 
-				 logger)
+		jobID,
+		context.Background(),
+		common.NewNullCpuMonitor(),
+		common.ELogLevel.Error(),
+		"Lustre",
+		a.PlanDirectory,
+		&tuner,
+		pacer,
+		common.NewMultiSizeSlicePool(4*1024*1024*1024 /* 4GiG */),
+		common.NewCacheLimiter(int64(a.CacheLimit*1024*1024*1024)),
+		common.NewCacheLimiter(int64(64)),
+		logger)
 
 	/*
 	 This needs to be moved to a better location
 	*/
 	go func() {
 		time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
-		rdbg.SetGCPercent(20)       // activate more aggressive/frequent GC than the default
+		rdbg.SetGCPercent(20)        // activate more aggressive/frequent GC than the default
 	}()
 
 	util.SetJobMgr(a.jobMgr)
@@ -326,7 +347,6 @@ func (a *azConfig) initSTE() (err error) {
 
 	return nil
 }
-
 
 func init() {
 	rate = metrics.NewMeter()

@@ -61,9 +61,10 @@ type (
 		EnabledPlugins []string `hcl:"enabled_plugins" json:"enabled_plugins"`
 		PluginDir      string   `hcl:"plugin_dir" json:"plugin_dir"`
 
-		Snapshots *snapshotConfig  `hcl:"snapshots" json:"snapshots"`
-		Transport *transportConfig `hcl:"transport" json:"transport"`
-		EventFIFOPath string `hcl:"event_fifo_path" json:"event_fifo_path"`
+		Snapshots     *snapshotConfig  `hcl:"snapshots" json:"snapshots"`
+		Transport     *transportConfig `hcl:"transport" json:"transport"`
+		EventFIFOPath string           `hcl:"event_fifo_path" json:"event_fifo_path"`
+		HNSOverride   string           `hcl:"hns_override" json:"hns_override"`
 	}
 )
 
@@ -236,6 +237,11 @@ func (c *Config) Merge(other *Config) *Config {
 	if other.EventFIFOPath != "" {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
+
+	result.HNSOverride = c.HNSOverride
+	if other.HNSOverride != "" {
+		result.HNSOverride = other.HNSOverride
+	}
 	return result
 }
 
@@ -250,6 +256,7 @@ func DefaultConfig() *Config {
 		Type:      config.DefaultTransport,
 		SocketDir: config.DefaultTransportSocketDir,
 	}
+	cfg.HNSOverride = ""
 	return cfg
 }
 
