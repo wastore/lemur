@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 	"sync"
+	"strconv"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/Azure/azure-storage-azcopy/v10/ste"
@@ -37,7 +38,8 @@ type (
 		ID                    int
 		configLock            sync.Mutex //currently only SAS is protected by this lock
 		AzStorageAccount      string `hcl:"az_storage_account"`
-		HNSEnabled            bool
+		HNSOverride           string `hcl:"hns_enabled"`
+		HNSEnabled            bool 
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string
@@ -140,6 +142,10 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 }
 
 func (a *archiveConfig) setAccountType() (err error) {
+	if val, err := strconv.ParseBool(a.HNSOverride); a.HNSOverride != "" && err == nil {
+		a.HNSEnabled = val
+		return nil
+	}
 	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
 	serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
 
