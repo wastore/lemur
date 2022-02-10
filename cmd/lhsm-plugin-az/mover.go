@@ -30,7 +30,7 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	forceSASRefresh     chan bool
+	forceSASRefresh     chan chan bool
 }
 
 // AzMover returns a new *Mover
@@ -51,7 +51,7 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 				MaxResponseHeaderBytes: 0,
 			},
 		},
-		forceSASRefresh:    make(chan bool),
+		forceSASRefresh:    make(chan chan bool),
 	}
 }
 
@@ -67,7 +67,7 @@ func (m *Mover) destination(id string) string {
 func (m *Mover) Start() {
 	util.InitJobLogger(pipeline.LogDebug)
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
-	go m.refreshCredential()
+	go m.refreshCredentialInt()
 	debug.Printf("%s started", m.name)
 }
 
@@ -94,54 +94,63 @@ func (m *Mover) getSASToken() string {
 	return m.config.AzStorageSAS
 }
 
-func (m *Mover) refreshCredential() {
+func(m *Mover) refreshCredential() {
+	ret := make (chan bool)
+	m.forceSASRefresh <- ret
+	<-ret
+}
+
+func (m *Mover) refreshCredentialInt() {
 	const sigAzure = "sig="
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 	nextRefreshInterval := defaultRefreshInterval
-	retryDelay := 4*time.Second // 4 seconds
-	maxTries := 20
+	retryDelay := 4 * time.Second
 	try := 1 // Number of retries to get the SAS. Starts at 1.
+	var respChan chan bool //Respond if someone is waiting for refresh
 
 	for {
 		select {
-		case <- time.After(nextRefreshInterval):
-			sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+		case respChan = <-m.forceSASRefresh:
+		case <-time.After(nextRefreshInterval):
+		}
+		sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
 
-			if err == nil && !strings.Contains(sas, sigAzure) {
-				err = fmt.Errorf("invalid SAS returned")
+		if err == nil && !strings.Contains(sas, sigAzure) {
+			err = fmt.Errorf("Invalid SAS returned")
+		}
+
+		if err != nil {
+
+			util.Log(pipeline.LogError, fmt.Sprintf(
+				"Failed to update SAS.\nReason: %s, try: %d",
+				err, try))
+
+			/*
+			 * Failed to update SAS. We'll retry with exponential delay.
+			 */
+			nextRefreshInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
+			if nextRefreshInterval >= time.Duration(1 * time.Minute) {
+				nextRefreshInterval = 1 * time.Minute
 			}
+			try++
+			util.Log(pipeline.LogError, fmt.Sprintf(
+				"Next refresh at %s",
+				time.Now().Add(nextRefreshInterval).String()))
+			continue
+		}
 
-			if err != nil {
+		//Refresh successful, next refresh - after m.config.CredRefreshInterval
+		nextRefreshInterval = defaultRefreshInterval
+		try = 1
+		util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
+		util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextRefreshInterval).String()))
+		m.config.configLock.Lock()
+		m.config.AzStorageSAS = sas
+		m.config.configLock.Unlock()
 
-				util.Log(pipeline.LogError,	fmt.Sprintf(
-							"Failed to update SAS. Falling back to previous SAS.\nReason: %s, try: %d",
-							err, try))
-				
-				/* 
-				 * Failed to update SAS. We'll retry with exponential delay.
-				 */
-				if (try <= maxTries) {
-					nextRefreshInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
-					try++
-				} else {
-					util.Log(pipeline.LogError, fmt.Sprintf("Could not update SAS in %d attempts. Giving up.", try))
-					nextRefreshInterval = defaultRefreshInterval
-					try = 1
-				}
-				util.Log(pipeline.LogError, fmt.Sprintf(
-							"Next refresh at %s", 
-							time.Now().Add(nextRefreshInterval).String()))
-				continue
-			}
-
-			//Refresh successful, next refresh - after m.config.CredRefreshInterval
-			util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
-			util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextRefreshInterval).String()))
-			nextRefreshInterval = defaultRefreshInterval
-
-			m.config.configLock.Lock()
-			m.config.AzStorageSAS = sas
-			m.config.configLock.Unlock()
+		if respChan != nil {
+			respChan <- true
+			respChan = nil
 		}
 	}
 }
@@ -198,8 +207,14 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		HTTPClient:    m.httpClient,
 	})
 
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			m.refreshCredential()
+		}
+	}
+
 	if err != nil {
-		return errors.Wrap(err, "upload failed")
+		return err
 	}
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
@@ -254,8 +269,14 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		HTTPClient:      m.httpClient,
 	})
 
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			m.refreshCredential()
+		}
+	}
+
 	if err != nil {
-		return errors.Errorf("az.Download() of %s failed: %s", srcObj, err)
+		return err
 	}
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
@@ -289,8 +310,14 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		Credential:    m.cred,
 	})
 
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			m.refreshCredential()
+		}
+	}
+
 	if err != nil {
-		return errors.Wrap(err, "delete object failed")
+		return err
 	}
 
 	return nil
