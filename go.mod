@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/Azure/azure-pipeline-go v0.2.3
 	github.com/Azure/azure-sdk-for-go v48.2.0+incompatible
-	github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220209054353-7792f32c6e7c
+	github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220216110323-838f4db639b3
 	github.com/Azure/azure-storage-blob-go v0.13.1-0.20210823171415-e7932f52ad61
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.3 // indirect
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect

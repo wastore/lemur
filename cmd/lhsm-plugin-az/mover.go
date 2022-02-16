@@ -207,10 +207,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		HTTPClient:    m.httpClient,
 	})
 
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == 403 {
-			m.refreshCredential()
-		}
+	if util.ShouldRefreshCreds(err) {
+		m.refreshCredential()
 	}
 
 	if err != nil {
@@ -269,10 +267,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		HTTPClient:      m.httpClient,
 	})
 
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == 403 {
-			m.refreshCredential()
-		}
+	if util.ShouldRefreshCreds(err) {
+		m.refreshCredential()
 	}
 
 	if err != nil {
@@ -310,10 +306,8 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		Credential:    m.cred,
 	})
 
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == 403 {
-			m.refreshCredential()
-		}
+	if util.ShouldRefreshCreds(err) {
+		m.refreshCredential()
 	}
 
 	if err != nil {

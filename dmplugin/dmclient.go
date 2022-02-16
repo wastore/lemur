@@ -12,7 +12,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/wastore/lemur/cmd/util"
@@ -414,7 +413,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 			err = actionFn(action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
-		if shouldRetry(err) {
+		if util.ShouldRetry(err) {
 			dm.requeueItem(item, actions)
 		} else {
 			action.Finish(err)
@@ -425,23 +424,4 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 		}
 	}
 	debug.Printf("%s: stopping", name)
-}
-
-//This needs to move to appropriate location, but we'll tolerate here
-//for now
-
-func shouldRetry(err error) bool {
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == 403 {
-			return true
-		}
-	}
-
-	if errEx, ok := err.(util.ErrorEx); ok {
-		if errEx.ErrorCode() == 403 {
-			return true
-		}
-	}
-
-	return false
 }

@@ -22,7 +22,6 @@ package util
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -54,6 +53,37 @@ func (e ErrorEx) Error() string {
 	return e.msg
 }
 
+func ShouldRetry(err error) bool {
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			return true
+		}
+	}
+
+	if errEx, ok := err.(ErrorEx); ok {
+		if errEx.ErrorCode() == 403 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func ShouldRefreshCreds(err error) bool {
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			return true
+		}
+	}
+
+	if errEx, ok := err.(ErrorEx); ok {
+		if errEx.ErrorCode() == 403 {
+			return true
+		}
+	}
+
+	return false
+}
 //HTTPClientFactory returns http sender with given client
 func HTTPClientFactory(client *http.Client) pipeline.FactoryFunc {
 	return pipeline.FactoryFunc(func(next pipeline.Policy, po *pipeline.PolicyOptions) pipeline.PolicyFunc {
@@ -238,7 +268,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
        }
 
        part, _ := jobMgr.JobPartMgr(p)
-       jpp  := part.Plan().Transfer(1)
+       jpp  := part.Plan().Transfer(0)
        errCode := jpp.ErrorCode()
 
        if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
@@ -331,7 +361,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
        }
 
        part, _ := jobMgr.JobPartMgr(p)
-       jpp  := part.Plan().Transfer(1)
+       jpp  := part.Plan().Transfer(0)
        errCode := jpp.ErrorCode()
 
        if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {

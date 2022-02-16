@@ -315,7 +315,8 @@ func (a *azConfig) initSTE() (err error) {
 				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
 				 common.NewCacheLimiter(int64(a.CacheLimit * 1024 * 1024 * 1024)),
 				 common.NewCacheLimiter(int64(64)),		 
-				 logger)
+				 logger,
+				 true)
 
 	/*
 	 This needs to be moved to a better location
