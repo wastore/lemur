@@ -90,7 +90,8 @@ func initSTE() (err error) {
                                  common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
                                  common.NewCacheLimiter(int64(2 * 1024 * 1024 * 1024)),
                                  common.NewCacheLimiter(int64(64)),
-                                 logger)
+                                 logger,
+				 true)
 
         /*
          This needs to be moved to a better location

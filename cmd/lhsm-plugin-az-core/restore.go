@@ -9,7 +9,6 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/pkg/errors"
 	"github.com/wastore/lemur/cmd/util"
 )
 
@@ -45,7 +44,7 @@ func Restore(o RestoreOptions) (int64, error) {
 	blobURL := azblob.NewBlobURL(*u, p)
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
-		return 0, errors.Wrapf(err, "GetProperties on %s failed", o.BlobName)
+		return 0, err
 	}
 	contentLen := blobProp.ContentLength()
 	err = util.Download(blobURL.String(), o.DestinationPath, o.BlockSize) 
