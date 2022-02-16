@@ -41,6 +41,19 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
+type ErrorEx struct {
+	code int32
+	msg  string
+}
+
+func (e ErrorEx) ErrorCode() int32 {
+	return e.code
+}
+
+func (e ErrorEx) Error() string {
+	return e.msg
+}
+
 //HTTPClientFactory returns http sender with given client
 func HTTPClientFactory(client *http.Client) pipeline.FactoryFunc {
 	return pipeline.FactoryFunc(func(next pipeline.Policy, po *pipeline.PolicyOptions) pipeline.PolicyFunc {
@@ -218,16 +231,22 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
        var status common.JobStatus 
        for !jobDone {
 	       part,_ := jobMgr.JobPartMgr(p)
-	       status = part.Plan().JobPartStatus()
+	       plan := part.Plan()
+	       status = plan.JobPartStatus()
 	       jobDone = status.IsJobDone()
 	       time.Sleep(time.Second * 1)
        }
-      
+
+       part, _ := jobMgr.JobPartMgr(p)
+       jpp  := part.Plan().Transfer(1)
+       errCode := jpp.ErrorCode()
+
        if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
 	       Log(pipeline.LogError, err.Error())
        }
+
        if status != common.EJobStatus.Completed() {
-	       return errors.New("STE Failed")
+	       return ErrorEx{code: errCode, msg: "STE Failed"}
        }
 
        return nil
@@ -311,11 +330,16 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 	       time.Sleep(time.Second * 1)
        }
 
+       part, _ := jobMgr.JobPartMgr(p)
+       jpp  := part.Plan().Transfer(1)
+       errCode := jpp.ErrorCode()
+
        if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
 	       Log(pipeline.LogError, err.Error())
        }
+
        if status != common.EJobStatus.Completed() {
-	       return errors.New("STE Failed")
+	       return ErrorEx{code: errCode, msg: "STE Failed"}
        }
 
        return nil

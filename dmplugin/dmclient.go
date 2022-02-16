@@ -437,5 +437,11 @@ func shouldRetry(err error) bool {
 		}
 	}
 
+	if errEx, ok := err.(util.ErrorEx); ok {
+		if errEx.ErrorCode() == 403 {
+			return true
+		}
+	}
+
 	return false
 }
