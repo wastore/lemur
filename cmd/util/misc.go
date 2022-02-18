@@ -148,6 +148,27 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 	return *secretResp.Value, nil
 }
 
+func IsSASValid(sas string) bool {
+	q, _ := url.ParseQuery(sas)
+
+	if q.Get("sig") == "" {
+		Log(pipeline.LogError, "Invalid SAS returned. Missing signature")
+		return false
+	}
+	if endTime := q.Get("se"); endTime != "" {
+		t, err := time.Parse(time.RFC3339, endTime)
+		if err != nil {
+			Log(pipeline.LogError, "Invalid expiry time on SAS." + err.Error())
+			return false
+		}
+		if t.Before(time.Now()) {
+			Log(pipeline.LogError, "Expired SAS returned")
+			return false
+		}
+	}
+	return true
+}
+
 func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
 	blockSizeThreshold := int64(256 * 1024 * 1024) /* 256 MB */
 	blockSize = minBlockSize

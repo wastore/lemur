@@ -65,7 +65,6 @@ func (m *Mover) destination(id string) string {
 
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
-	util.InitJobLogger(pipeline.LogDebug)
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
 	go m.refreshCredentialInt()
 	debug.Printf("%s started", m.name)
@@ -101,7 +100,6 @@ func(m *Mover) refreshCredential() {
 }
 
 func (m *Mover) refreshCredentialInt() {
-	const sigAzure = "sig="
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 	nextRefreshInterval := defaultRefreshInterval
 	retryDelay := 4 * time.Second
@@ -115,8 +113,8 @@ func (m *Mover) refreshCredentialInt() {
 		}
 		sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
 
-		if err == nil && !strings.Contains(sas, sigAzure) {
-			err = fmt.Errorf("Invalid SAS returned")
+		if err == nil && !util.IsSASValid(sas) {
+			err = errors.New("Invalid SAS returned")
 		}
 
 		if err != nil {
