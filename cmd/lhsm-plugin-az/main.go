@@ -43,7 +43,7 @@ type (
 		HNSEnabled            bool 
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
-		AzStorageSAS          string
+		AzStorageSAS          string `json:"-"`
 		Endpoint              string
 		Region                string
 		Container             string
