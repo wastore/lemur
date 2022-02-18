@@ -23,6 +23,7 @@ import (
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/wastore/go-lustre/fs/spec"
 	"github.com/wastore/lemur/cmd/lhsmd/config"
+	"github.com/wastore/lemur/cmd/util"
 )
 
 var (
@@ -151,6 +152,7 @@ func (c *Config) String() string {
 		alert.Abort(errors.Wrap(err, "marshal failed"))
 	}
 
+	data = []byte(util.NewAzCopyLogSanitizer().SanitizeLogMessage(string(data)))
 	var out bytes.Buffer
 	json.Indent(&out, data, "", "\t")
 	return out.String()
