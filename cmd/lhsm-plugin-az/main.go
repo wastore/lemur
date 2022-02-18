@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-pipeline-go/pipeline"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -117,13 +118,13 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 	defer a.configLock.Unlock()
 
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
-	// If return string does not contain "sig=", we're sure it is not SAS.
-	if !strings.Contains(a.AzStorageSAS, sigAzure) {
-		return errors.Wrap(err, "Invalid secret returned. SAS string expected.")
-	}
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
+	}
+
+	if !util.IsSASValid(a.AzStorageSAS) {
+		return errors.New("Invalid SAS returned")
 	}
 
 	return nil
@@ -326,6 +327,7 @@ func main() {
 		alert.Abort(errors.Wrap(err, "registering HSM event FIFO (plugin)"))
 	}
 	defer llapi.UnregisterErrorCB(cfg.EventFIFOPath)
+	util.InitJobLogger(pipeline.LogDebug)
 
 	for _, ac := range cfg.Archives {
 		ac.mergeGlobals(cfg)
