@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -18,6 +19,7 @@ type RemoveOptions struct {
 	BlobName      string
 	ExportPrefix  string
 	Credential    azblob.Credential
+	OpStartTime   time.Time
 }
 
 func Remove(o RemoveOptions) error {

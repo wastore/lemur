@@ -37,13 +37,14 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
-		configLock            sync.Mutex //currently only SAS is protected by this lock
+		configLock            sync.Mutex //currently only SAS & SASContext is protected by this lock
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		HNSOverride           string `hcl:"hns_enabled"`
 		HNSEnabled            bool 
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string `json:"-"`
+		SASContext            time.Time `json:"-"` //Context is used by operations to know if they've latest SAS
 		Endpoint              string
 		Region                string
 		Container             string

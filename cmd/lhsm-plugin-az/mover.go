@@ -93,7 +93,17 @@ func (m *Mover) getSASToken() string {
 	return m.config.AzStorageSAS
 }
 
-func(m *Mover) refreshCredential() {
+func (m *Mover) getSASContext() time.Time {
+	m.config.configLock.Lock()
+	defer m.config.configLock.Unlock()
+	return m.config.SASContext
+}
+
+func(m *Mover) refreshCredential(t time.Time) {
+	if t.Before(m.getSASContext()) {
+		//we already have an updated SAS.
+		return
+	}
 	ret := make (chan bool)
 	m.forceSASRefresh <- ret
 	<-ret
@@ -144,6 +154,7 @@ func (m *Mover) refreshCredentialInt() {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextRefreshInterval).String()))
 		m.config.configLock.Lock()
 		m.config.AzStorageSAS = sas
+		m.config.SASContext = time.Now()
 		m.config.configLock.Unlock()
 
 		if respChan != nil {
@@ -188,6 +199,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	}
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
+	opStartTime := time.Now()
 
 	total, err := core.Archive(core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
@@ -203,10 +215,11 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		ExportPrefix:  m.config.ExportPrefix,
 		HNSEnabled:    m.config.HNSEnabled,
 		HTTPClient:    m.httpClient,
+		OpStartTime:   opStartTime,
 	})
 
 	if util.ShouldRefreshCreds(err) {
-		m.refreshCredential()
+		m.refreshCredential(opStartTime)
 	}
 
 	if err != nil {
@@ -251,6 +264,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
+	opStartTime := time.Now()
+
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
@@ -263,10 +278,11 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		ExportPrefix:    m.config.ExportPrefix,
 		Pacer:           pacer,
 		HTTPClient:      m.httpClient,
+		OpStartTime:     opStartTime,
 	})
 
 	if util.ShouldRefreshCreds(err) {
-		m.refreshCredential()
+		m.refreshCredential(opStartTime)
 	}
 
 	if err != nil {
@@ -295,6 +311,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
+	opStartTime := time.Now()
 	err = core.Remove(core.RemoveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
@@ -302,10 +319,11 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,
 		Credential:    m.cred,
+		OpStartTime:   opStartTime,
 	})
 
 	if util.ShouldRefreshCreds(err) {
-		m.refreshCredential()
+		m.refreshCredential(opStartTime)
 	}
 
 	if err != nil {

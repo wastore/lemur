@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -32,6 +33,7 @@ type ArchiveOptions struct {
 	ExportPrefix  string
 	HNSEnabled    bool
 	HTTPClient    *http.Client
+	OpStartTime   time.Time
 }
 
 const blobEndPoint string = "https://%s.blob.core.windows.net/"

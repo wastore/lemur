@@ -414,7 +414,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
 		if util.ShouldRetry(err) {
-			dm.requeueItem(item, actions)
+			go dm.requeueItem(item, actions)
 		} else {
 			action.Finish(err)
 		}
