@@ -27,7 +27,7 @@ require (
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
-	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
+	github.com/wastore/go-lustre v0.0.4-0.20220304200904-870f1adc7610
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b // indirect
