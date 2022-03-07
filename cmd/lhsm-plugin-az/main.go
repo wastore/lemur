@@ -131,6 +131,7 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 	defer a.configLock.Unlock()
 
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
+	a.SASContext = time.Now()
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
@@ -317,7 +318,7 @@ func (a *azConfig) initSTE() (err error) {
 				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
 				 common.NewCacheLimiter(int64(a.CacheLimit * 1024 * 1024 * 1024)),
 				 common.NewCacheLimiter(int64(64)),		 
-				 logger,
+				 logger, 
 				 true)
 
 	/*
@@ -329,7 +330,7 @@ func (a *azConfig) initSTE() (err error) {
 	}()
 
 	util.SetJobMgr(a.jobMgr)
-	util.RestPartNum()
+	util.ResetPartNum()
 	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
 	common.GetLifecycleMgr().SetForceLogging()
 

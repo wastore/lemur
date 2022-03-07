@@ -216,7 +216,9 @@ func NextPartNum() uint32 {
 	return ret
 }
 
-func RestPartNum() {
+func ResetPartNum() {
+	partNumLock.Lock()
+	defer partNumLock.Unlock()
 	globalPartNum = 0
 }
 
@@ -292,7 +294,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
        jpp  := part.Plan().Transfer(0)
        errCode := jpp.ErrorCode()
 
-       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
+       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
 	       Log(pipeline.LogError, err.Error())
        }
 
@@ -385,7 +387,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
        jpp  := part.Plan().Transfer(0)
        errCode := jpp.ErrorCode()
 
-       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil {
+       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
 	       Log(pipeline.LogError, err.Error())
        }
 

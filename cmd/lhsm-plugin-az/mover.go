@@ -99,14 +99,20 @@ func (m *Mover) getSASContext() time.Time {
 	return m.config.SASContext
 }
 
-func(m *Mover) refreshCredential(t time.Time) {
-	if t.Before(m.getSASContext()) {
-		//we already have an updated SAS.
+func(m *Mover) refreshCredential(prevSASCtx time.Time) {
+	m.config.configLock.Lock()
+	defer m.config.configLock.Unlock()
+	
+	if prevSASCtx.Before(m.config.SASContext) {
+		// We already have a new SAS. We dont want to update.
 		return
 	}
+
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Requesting SAS refresh. Prev Ctx: %s Current Ctx: %s", prevSASCtx.String(), m.config.SASContext.String()))
 	ret := make (chan bool)
 	m.forceSASRefresh <- ret
-	<-ret
+
+	<-ret //this will block until the SAS has been refreshed
 }
 
 func (m *Mover) refreshCredentialInt() {
@@ -152,10 +158,8 @@ func (m *Mover) refreshCredentialInt() {
 		try = 1
 		util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
 		util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextRefreshInterval).String()))
-		m.config.configLock.Lock()
 		m.config.AzStorageSAS = sas
 		m.config.SASContext = time.Now()
-		m.config.configLock.Unlock()
 
 		if respChan != nil {
 			respChan <- true
@@ -219,6 +223,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	})
 
 	if util.ShouldRefreshCreds(err) {
+		util.Log(pipeline.LogError, fmt.Sprintf("Refreshing creds for item %s", action.PrimaryPath()))
 		m.refreshCredential(opStartTime)
 	}
 
@@ -257,7 +262,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		defer pacer.Close()
 	}
 	if action.UUID() == "" {
-		return errors.Errorf("Missing file_id on action %d", action.ID())
+		return errors.Errorf("Missing file_id on action %s", action.PrimaryPath())
 	}
 	container, srcObj, err := m.fileIDtoContainerPath(action.UUID())
 	if err != nil {
@@ -282,6 +287,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	})
 
 	if util.ShouldRefreshCreds(err) {
+		util.Log(pipeline.LogError, fmt.Sprintf("Refreshing creds for item %s", action.PrimaryPath()))
 		m.refreshCredential(opStartTime)
 	}
 

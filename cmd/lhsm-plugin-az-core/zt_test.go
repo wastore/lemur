@@ -102,7 +102,7 @@ func initSTE() (err error) {
         }()
 
         util.SetJobMgr(jobMgr)
-        util.RestPartNum()
+        util.ResetPartNum()
         common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
         common.GetLifecycleMgr().SetForceLogging()
 
