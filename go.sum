@@ -100,6 +100,8 @@ github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220306132408-7a9083111dbb
 github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220306132408-7a9083111dbb/go.mod h1:SsVZS5dBw2IpAC3/h7MV+I6IN7dIQm+/6o8+gGTMu4s=
 github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220307131806-6c0bc345efd4 h1:KayHJk5o6YV3trpfwfjrYaXvoXqtfUuK7Sqfx8tBkC0=
 github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220307131806-6c0bc345efd4/go.mod h1:SsVZS5dBw2IpAC3/h7MV+I6IN7dIQm+/6o8+gGTMu4s=
+github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220309122951-fce46f2f737d h1:KWJTkWC/D/svslhXfM5NBp+qhZxSOn9wWoweFFvBwvU=
+github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220309122951-fce46f2f737d/go.mod h1:SsVZS5dBw2IpAC3/h7MV+I6IN7dIQm+/6o8+gGTMu4s=
 github.com/Azure/azure-storage-azcopy/v10 v10.14.0 h1:1f8+Z0Vzu2q0KCNbv2gIfzb5sxrWrLkIR9Iqclsb1Ck=
 github.com/Azure/azure-storage-azcopy/v10 v10.14.0/go.mod h1:9l0hD5Z1WhYw2idAco2yRBY3ukC3F7dms+AbN7FPAnM=
 github.com/Azure/azure-storage-blob-go v0.13.1-0.20210823171415-e7932f52ad61 h1:/c2dpiywIP88Xu7K+4ZtbwwecYhR+jnlywZpvriBZzk=
@@ -549,6 +551,12 @@ github.com/tinylib/msgp v1.0.2/go.mod h1:+d+yLhGm8mzTaHzB+wgMYrodPfmZrzkirds8fDW
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674 h1:W+JPDU8/A10dpYv9yOJ+E9iKmh6lzRDRZaJNrdotQj4=
 github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674/go.mod h1:u7Rb3Hh7fYlkqZ56YKhxMGlnXwxpp9GcoluVfUa8pN4=
+github.com/wastore/go-lustre v0.0.4-0.20220304200904-870f1adc7610 h1:p8RsDgP32DpdF6u+6BKz7aok6rqZuuQxIblJef5SZU0=
+github.com/wastore/go-lustre v0.0.4-0.20220304200904-870f1adc7610/go.mod h1:u7Rb3Hh7fYlkqZ56YKhxMGlnXwxpp9GcoluVfUa8pN4=
+github.com/wastore/go-lustre v0.0.4-0.20220304212757-17582e83560c h1:LbSNmii2UkD4ROPoSkCH8/zEcHVWULDtNqVsy3nYSWo=
+github.com/wastore/go-lustre v0.0.4-0.20220304212757-17582e83560c/go.mod h1:u7Rb3Hh7fYlkqZ56YKhxMGlnXwxpp9GcoluVfUa8pN4=
+github.com/wastore/go-lustre v0.0.4-0.20220309154359-b911fc9d530e h1:Rl+QCghaV8s1VKbc6gSqUUzdqmHXbQGyyUlGDkUt6wg=
+github.com/wastore/go-lustre v0.0.4-0.20220309154359-b911fc9d530e/go.mod h1:u7Rb3Hh7fYlkqZ56YKhxMGlnXwxpp9GcoluVfUa8pN4=
 github.com/wastore/keychain v0.0.0-20180920053336-f2c902a3d807 h1:Uzh85j0tl46Sf2OOx1wDePSWkz3Eq8XdCFkLXqaX8Bg=
 github.com/wastore/keychain v0.0.0-20180920053336-f2c902a3d807/go.mod h1:zI8umr7xnBSyT9ZJ8wn48RiQ0EWXo4xmYLNw9FQvC9w=
 github.com/wastore/keyctl v0.3.1 h1:wMkYW9y9jGbQ1ARBLGLwnDdbgrkbuSeuIQeHy+BZOU0=

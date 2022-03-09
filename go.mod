@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/storage v1.21.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3
 	github.com/Azure/azure-sdk-for-go v48.2.0+incompatible
-	github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220307131806-6c0bc345efd4
+	github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220309122951-fce46f2f737d
 	github.com/Azure/azure-storage-blob-go v0.13.1-0.20210914164749-2d6cd3e07548
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.3 // indirect
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
@@ -27,7 +27,7 @@ require (
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
-	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
+	github.com/wastore/go-lustre v0.0.4-0.20220309154359-b911fc9d530e
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b // indirect
