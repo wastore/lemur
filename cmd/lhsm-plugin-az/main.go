@@ -11,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"sync"
 	"strconv"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -37,7 +36,6 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
-		configLock            sync.Mutex //currently only SAS & SASContext is protected by this lock
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		HNSOverride           string `hcl:"hns_enabled"`
 		HNSEnabled            bool 
@@ -126,9 +124,6 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
-
-	a.configLock.Lock()
-	defer a.configLock.Unlock()
 
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
 	a.SASContext = time.Now()

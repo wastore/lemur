@@ -30,7 +30,10 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	forceSASRefresh     chan chan bool
+
+	//*Channels to interact wtih SAS Manager
+	getSAS              chan chan string
+	forceSASRefresh     chan time.Time
 }
 
 // AzMover returns a new *Mover
@@ -51,7 +54,8 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 				MaxResponseHeaderBytes: 0,
 			},
 		},
-		forceSASRefresh:    make(chan chan bool),
+		getSAS:             make(chan chan string),
+		forceSASRefresh:    make(chan time.Time),
 	}
 }
 
@@ -66,7 +70,7 @@ func (m *Mover) destination(id string) string {
 // Start signals the mover to begin any asynchronous processing (e.g. stats)
 func (m *Mover) Start() {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
-	go m.refreshCredentialInt()
+	go m.SASManager()
 	debug.Printf("%s started", m.name)
 }
 
@@ -87,83 +91,90 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 	return container, path, nil
 }
 
-func (m *Mover) getSASToken() string {
-	m.config.configLock.Lock()
-	defer m.config.configLock.Unlock()
-	return m.config.AzStorageSAS
-}
-
-func (m *Mover) getSASContext() time.Time {
-	m.config.configLock.Lock()
-	defer m.config.configLock.Unlock()
-	return m.config.SASContext
-}
-
-func(m *Mover) refreshCredential(prevSASCtx time.Time) {
-	m.config.configLock.Lock()
-	defer m.config.configLock.Unlock()
-	
-	if prevSASCtx.Before(m.config.SASContext) {
-		// We already have a new SAS. We dont want to update.
-		return
+// getSASToken will block till a valid sas is returned or timeout after a minute
+func (m *Mover) getSASToken() (string, error) {
+	ret := make(chan string)
+	select {
+	case m.getSAS <- ret:
+		select {
+		case sas := <- ret:
+			return sas, nil
+		case <-time.After(time.Minute):
+			return "", errors.New("Failed to get SAS")
+		}
+	case <-time.After(time.Minute):
+		return "", errors.New("Failed to get SAS. Refresh in progress")
 	}
-
-	util.Log(pipeline.LogDebug, fmt.Sprintf("Requesting SAS refresh. Prev Ctx: %s Current Ctx: %s", prevSASCtx.String(), m.config.SASContext.String()))
-	ret := make (chan bool)
-	m.forceSASRefresh <- ret
-
-	<-ret //this will block until the SAS has been refreshed
 }
 
-func (m *Mover) refreshCredentialInt() {
+// returns true if we could successfully ask SAS manager to refresh creds in 1minute
+func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
+	select {
+	case m.forceSASRefresh <- prevSASCtx: //this will block until we've requested for a refresh
+		return true
+	case <-time.After(time.Minute):
+		return false
+	}
+}
+
+
+/*
+ * SASManager() 
+ * - Returns valid SAS on received channel when Archive/Restore/Return operations ask for it
+ * - Updates SAS when operations request for it (i.e. when they fail with 403)
+ * - Updates SAS every `CredRefreshInterval`
+ * Also, checkAzAccess() would put a valid SAS before Mover is started, and hence SASManager
+ * is always seeded with a valid SAS
+ */
+func (m *Mover) SASManager() {
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
-	nextRefreshInterval := defaultRefreshInterval
-	retryDelay := 4 * time.Second
-	try := 1 // Number of retries to get the SAS. Starts at 1.
-	var respChan chan bool //Respond if someone is waiting for refresh
 
 	for {
+		retryDelay := 4 * time.Second
+		try := 1 // Number of retries to get the SAS. Starts at 1.
+		var nextTryInterval time.Duration
+
 		select {
-		case respChan = <-m.forceSASRefresh:
-		case <-time.After(nextRefreshInterval):
+		case <-time.After(defaultRefreshInterval): // we always try to refresh
+		case reqCtx := <-m.forceSASRefresh:
+			if reqCtx.Before(m.config.SASContext) {
+				//Nothing to be done, we've already updated sas.
+				continue
+			} // else we refresh sas
+		case retChan := <-m.getSAS: //lowest priority is to return SAS
+			retChan <- m.config.AzStorageSAS
+			continue
 		}
-		sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
 
-		if err == nil && !util.IsSASValid(sas) {
-			err = errors.New("Invalid SAS returned")
-		}
+		for { //loop till we've a valid SAS
+			sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+			if err == nil && !util.IsSASValid(sas) {
+				err = errors.New("Invalid SAS returned")
+			}
 
-		if err != nil {
-
-			util.Log(pipeline.LogError, fmt.Sprintf(
-				"Failed to update SAS.\nReason: %s, try: %d",
-				err, try))
+			if err == nil {
+				//we've a valid SAS
+				m.config.AzStorageSAS = sas
+				m.config.SASContext = time.Now()
+				util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
+				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextTryInterval).String()))
+				break
+			}
 
 			/*
 			 * Failed to update SAS. We'll retry with exponential delay.
 			 */
-			nextRefreshInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
-			if nextRefreshInterval >= time.Duration(1 * time.Minute) {
-				nextRefreshInterval = 1 * time.Minute
+			util.Log(pipeline.LogError, fmt.Sprintf(
+				"Failed to update SAS.\nReason: %s, try: %d",
+				err, try))
+			nextTryInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
+			if nextTryInterval >= time.Duration(1 * time.Minute) {
+				nextTryInterval = 1 * time.Minute
 			}
 			try++
-			util.Log(pipeline.LogError, fmt.Sprintf(
-				"Next refresh at %s",
-				time.Now().Add(nextRefreshInterval).String()))
-			continue
-		}
 
-		//Refresh successful, next refresh - after m.config.CredRefreshInterval
-		nextRefreshInterval = defaultRefreshInterval
-		try = 1
-		util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
-		util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextRefreshInterval).String()))
-		m.config.AzStorageSAS = sas
-		m.config.SASContext = time.Now()
-
-		if respChan != nil {
-			respChan <- true
-			respChan = nil
+			//retry after delay
+			time.Sleep(nextTryInterval)
 		}
 	}
 }
@@ -204,11 +215,15 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	fileID := fnames[0]
 	fileKey := m.destination(fileID)
 	opStartTime := time.Now()
+	sas, err := m.getSASToken()
+	if err != nil {
+		return err
+	}
 
 	total, err := core.Archive(core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: m.config.Container,
-		ResourceSAS:   m.getSASToken(),
+		ResourceSAS:   sas,
 		MountRoot:     m.config.MountRoot,
 		BlobName:      fileKey,
 		Credential:    m.cred,
@@ -269,12 +284,17 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
+	sas, err := m.getSASToken()
+	if err != nil {
+		return err
+	}
+
 	opStartTime := time.Now()
 
 	contentLen, err := core.Restore(core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
-		ResourceSAS:     m.getSASToken(),
+		ResourceSAS:     sas,
 		BlobName:        srcObj,
 		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
@@ -317,11 +337,16 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
 
+	sas, err := m.getSASToken()
+	if err != nil {
+		return err
+	}
+
 	opStartTime := time.Now()
 	err = core.Remove(core.RemoveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: container,
-		ResourceSAS:   m.getSASToken(),
+		ResourceSAS:   sas,
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,
 		Credential:    m.cred,

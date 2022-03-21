@@ -155,7 +155,11 @@ func IsSASValid(sas string) bool {
 		Log(pipeline.LogError, "Invalid SAS returned. Missing signature")
 		return false
 	}
-	if endTime := q.Get("se"); endTime != "" {
+
+	if endTime := q.Get("se"); endTime == "" {
+		Log(pipeline.LogError, "Invalid SAS returned. Missing endTime")
+		return false
+	} else {
 		t, err := time.Parse(time.RFC3339, endTime)
 		if err != nil {
 			Log(pipeline.LogError, "Invalid expiry time on SAS." + err.Error())
@@ -166,6 +170,20 @@ func IsSASValid(sas string) bool {
 			return false
 		}
 	}
+
+	if signedPermissions := q.Get("sp"); signedPermissions == "" {
+		Log(pipeline.LogError, "Invalid SAS returned. Missing permissions")
+		return false
+	} else {
+		// we need (r)ead - (w)rite - (l)ist permissions the minimum
+		if !strings.ContainsRune(signedPermissions, 'r')      ||
+			!strings.ContainsRune(signedPermissions, 'w') ||
+			!strings.ContainsRune(signedPermissions, 'l') {
+				Log(pipeline.LogError, "Invalid SAS returned. Insufficient permissions")
+				return false
+			}
+	}
+
 	return true
 }
 
