@@ -174,7 +174,7 @@ func IsSASValid(sas string) bool {
 	if signedPermissions := q.Get("sp"); signedPermissions == "" {
 		Log(pipeline.LogError, "Invalid SAS returned. Missing permissions")
 		return false
-	} else {
+	}/* else {
 		// we need (r)ead - (w)rite - (l)ist permissions the minimum
 		if !strings.ContainsRune(signedPermissions, 'r')      ||
 			!strings.ContainsRune(signedPermissions, 'w') ||
@@ -182,7 +182,7 @@ func IsSASValid(sas string) bool {
 				Log(pipeline.LogError, "Invalid SAS returned. Insufficient permissions")
 				return false
 			}
-	}
+	}*/
 
 	return true
 }
@@ -299,7 +299,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	       FolderTransfer:       order.Transfers.FolderTransferCount})
 
        jobDone := false
-       var status common.JobStatus 
+       var status common.JobStatus
        for !jobDone {
 	       part,_ := jobMgr.JobPartMgr(p)
 	       plan := part.Plan()
@@ -333,7 +333,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		rawURL, _ := url.Parse(blobPath)
 		blobUrlParts := azblob.NewBlobURLParts(*rawURL)
 		blobUrlParts.BlobName = strings.TrimSuffix(blobUrlParts.BlobName, "/")
-	
+
 		// perform the check
 		blobURL := azblob.NewBlobURL(blobUrlParts.URL(), azblob.NewPipeline(azblob.NewAnonymousCredential(), azblob.PipelineOptions{}))
 		return blobURL.GetProperties(context.TODO(), azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
@@ -393,7 +393,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 	       FolderTransfer:       order.Transfers.FolderTransferCount})
 
        jobDone := false
-       var status common.JobStatus 
+       var status common.JobStatus
        for !jobDone {
 	       part,_ := jobMgr.JobPartMgr(p)
 	       status = part.Plan().JobPartStatus()
