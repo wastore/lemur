@@ -3,20 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"os/signal"
-	"math"
 	"path"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"strconv"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/Azure/azure-storage-azcopy/v10/ste"
-	"github.com/Azure/azure-storage-azcopy/v10/common"
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-azcopy/v10/common"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -38,11 +38,10 @@ type (
 		ID                    int
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		HNSOverride           string `hcl:"hns_enabled"`
-		HNSEnabled            bool 
+		HNSEnabled            bool
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string `json:"-"`
-		SASContext            time.Time `json:"-"` //Context is used by operations to know if they've latest SAS
 		Endpoint              string
 		Region                string
 		Container             string
@@ -74,11 +73,10 @@ type (
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
 
 		/* STE Parameters */
-		PlanDirectory         string     `hcl:"plan_dir"`
-		CacheLimit            int        `hcl:"cache_limit"`
-		LogLevel              string     `hcl:"log_level"`
-		jobMgr                ste.IJobMgr
-
+		PlanDirectory string `hcl:"plan_dir"`
+		CacheLimit    int    `hcl:"cache_limit"`
+		LogLevel      string `hcl:"log_level"`
+		jobMgr        ste.IJobMgr
 	}
 )
 
@@ -126,7 +124,6 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 	}
 
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
-	a.SASContext = time.Now()
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
@@ -265,7 +262,7 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	}
 
 	/* STE parameters */
-	result.CacheLimit = defaultSTEMemoryLimit 
+	result.CacheLimit = defaultSTEMemoryLimit
 	if other.CacheLimit != 0 {
 		result.CacheLimit = other.CacheLimit
 	}
@@ -279,7 +276,7 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	if other.PlanDirectory != "" {
 		result.PlanDirectory = other.PlanDirectory
 	}
-	
+
 	return result
 }
 
@@ -298,30 +295,30 @@ func (a *azConfig) initSTE() (err error) {
 
 	os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
 	if a.Bandwidth != 0 {
-		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth * 1024 * 1024), 0)
+		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth*1024*1024), 0)
 	}
 
 	a.jobMgr = ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
-				 jobID,
-				 context.Background(),
-				 common.NewNullCpuMonitor(),
-				 common.ELogLevel.Error(),
-				 "Lustre",
-				 a.PlanDirectory,
-				 &tuner,
-				 pacer,
-				 common.NewMultiSizeSlicePool(4 * 1024 * 1024 * 1024 /* 4GiG */),
-				 common.NewCacheLimiter(int64(a.CacheLimit * 1024 * 1024 * 1024)),
-				 common.NewCacheLimiter(int64(64)),		 
-				 logger, 
-				 true)
+		jobID,
+		context.Background(),
+		common.NewNullCpuMonitor(),
+		common.ELogLevel.Error(),
+		"Lustre",
+		a.PlanDirectory,
+		&tuner,
+		pacer,
+		common.NewMultiSizeSlicePool(4*1024*1024*1024 /* 4GiG */),
+		common.NewCacheLimiter(int64(a.CacheLimit*1024*1024*1024)),
+		common.NewCacheLimiter(int64(64)),
+		logger,
+		true)
 
 	/*
 	 This needs to be moved to a better location
 	*/
 	go func() {
 		time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
-		rdbg.SetGCPercent(20)       // activate more aggressive/frequent GC than the default
+		rdbg.SetGCPercent(20)        // activate more aggressive/frequent GC than the default
 	}()
 
 	util.SetJobMgr(a.jobMgr)
@@ -331,7 +328,6 @@ func (a *azConfig) initSTE() (err error) {
 
 	return nil
 }
-
 
 func init() {
 	rate = metrics.NewMeter()

@@ -102,6 +102,8 @@ github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220307131806-6c0bc345efd4
 github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220307131806-6c0bc345efd4/go.mod h1:SsVZS5dBw2IpAC3/h7MV+I6IN7dIQm+/6o8+gGTMu4s=
 github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220309122951-fce46f2f737d h1:KWJTkWC/D/svslhXfM5NBp+qhZxSOn9wWoweFFvBwvU=
 github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220309122951-fce46f2f737d/go.mod h1:SsVZS5dBw2IpAC3/h7MV+I6IN7dIQm+/6o8+gGTMu4s=
+github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220324102430-3d02ce747741 h1:r1UDGRdiocKM+Anpwt0xQ+gmVbDut1OhzaahaqbTQWc=
+github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220324102430-3d02ce747741/go.mod h1:SsVZS5dBw2IpAC3/h7MV+I6IN7dIQm+/6o8+gGTMu4s=
 github.com/Azure/azure-storage-azcopy/v10 v10.14.0 h1:1f8+Z0Vzu2q0KCNbv2gIfzb5sxrWrLkIR9Iqclsb1Ck=
 github.com/Azure/azure-storage-azcopy/v10 v10.14.0/go.mod h1:9l0hD5Z1WhYw2idAco2yRBY3ukC3F7dms+AbN7FPAnM=
 github.com/Azure/azure-storage-blob-go v0.13.1-0.20210823171415-e7932f52ad61 h1:/c2dpiywIP88Xu7K+4ZtbwwecYhR+jnlywZpvriBZzk=

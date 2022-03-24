@@ -84,6 +84,7 @@ func ShouldRefreshCreds(err error) bool {
 
 	return false
 }
+
 //HTTPClientFactory returns http sender with given client
 func HTTPClientFactory(client *http.Client) pipeline.FactoryFunc {
 	return pipeline.FactoryFunc(func(next pipeline.Policy, po *pipeline.PolicyOptions) pipeline.PolicyFunc {
@@ -162,7 +163,7 @@ func IsSASValid(sas string) bool {
 	} else {
 		t, err := time.Parse(time.RFC3339, endTime)
 		if err != nil {
-			Log(pipeline.LogError, "Invalid expiry time on SAS." + err.Error())
+			Log(pipeline.LogError, "Invalid expiry time on SAS."+err.Error())
 			return false
 		}
 		if t.Before(time.Now()) {
@@ -176,12 +177,12 @@ func IsSASValid(sas string) bool {
 		return false
 	} else {
 		// we need (r)ead - (w)rite - (l)ist permissions the minimum
-		if !strings.ContainsRune(signedPermissions, 'r')      ||
+		if !strings.ContainsRune(signedPermissions, 'r') ||
 			!strings.ContainsRune(signedPermissions, 'w') ||
 			!strings.ContainsRune(signedPermissions, 'l') {
-				Log(pipeline.LogError, "Invalid SAS returned. Insufficient permissions")
-				return false
-			}
+			Log(pipeline.LogError, "Invalid SAS returned. Insufficient permissions")
+			return false
+		}
 	}
 
 	return true
@@ -204,7 +205,7 @@ func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
 			 */
 			blockSize = filesize / azblob.BlockBlobMaxBlocks
 			break
-			}
+		}
 	}
 
 	return blockSize
@@ -229,7 +230,7 @@ func NextPartNum() uint32 {
 		jobMgr.Reset(context.Background(), "Lustre")
 		globalPartNum = 0
 	}
-	ret :=  globalPartNum
+	ret := globalPartNum
 	globalPartNum = globalPartNum + 1
 	return ret
 }
@@ -241,30 +242,30 @@ func ResetPartNum() {
 }
 
 func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
-	srcResource, _ := cmd.SplitResourceString(filePath , common.ELocation.Local())
+	srcResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	dstResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
 	p := common.PartNumber(NextPartNum())
 
 	fi, _ := os.Stat(filePath)
 
 	t := common.CopyTransfer{
-		Source:             "",
-		Destination:        "",
-		EntityType:         common.EEntityType.File(),
-		LastModifiedTime:   fi.ModTime(),
-		SourceSize:         fi.Size(),
-		Metadata:           common.FromAzBlobMetadataToCommonMetadata(meta),
+		Source:           "",
+		Destination:      "",
+		EntityType:       common.EEntityType.File(),
+		LastModifiedTime: fi.ModTime(),
+		SourceSize:       fi.Size(),
+		Metadata:         common.FromAzBlobMetadataToCommonMetadata(meta),
 	}
 
 	var metadata = ""
 	for k, v := range meta {
-		metadata = metadata + fmt.Sprintf("%s=%s;", k,v)
+		metadata = metadata + fmt.Sprintf("%s=%s;", k, v)
 	}
 	if len(metadata) > 0 { //Remove trailing ';'
 		metadata = metadata[:len(metadata)-1]
 	}
 
-	order := common.CopyJobPartOrderRequest {
+	order := common.CopyJobPartOrderRequest{
 		JobID:           JobMgr().JobID(),
 		PartNum:         p,
 		FromTo:          common.EFromTo.LocalBlob(),
@@ -274,66 +275,58 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		Priority:        common.EJobPriority.Normal(),
 		LogLevel:        common.ELogLevel.Debug(),
 		BlobAttributes: common.BlobTransferAttributes{
-				BlobType:                 common.EBlobType.BlockBlob(),
-				BlockSizeInBytes:         GetBlockSize(fi.Size(), blockSize),
-				Metadata:                 metadata,
-
+			BlobType:         common.EBlobType.BlockBlob(),
+			BlockSizeInBytes: GetBlockSize(fi.Size(), blockSize),
+			Metadata:         metadata,
 		},
-		CommandString:  "NONE",
+		CommandString:   "NONE",
 		DestinationRoot: dstResource,
-		SourceRoot: srcResource,
-		Fpo: common.EFolderPropertiesOption.NoFolders(),
+		SourceRoot:      srcResource,
+		Fpo:             common.EFolderPropertiesOption.NoFolders(),
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
 	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
 	jppfn.Create(order)
 
-	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true)
+	waitForCompletion := make(chan struct{})
+	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
 
 	// Update jobPart Status with the status Manager
-       jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
-	       IsFinalPart:          true,
-	       TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
-	       FileTransfers:        order.Transfers.FileTransferCount,
-	       FolderTransfer:       order.Transfers.FolderTransferCount})
+	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
+		IsFinalPart:          true,
+		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
+		FileTransfers:        order.Transfers.FileTransferCount,
+		FolderTransfer:       order.Transfers.FolderTransferCount})
 
-       jobDone := false
-       var status common.JobStatus 
-       for !jobDone {
-	       part,_ := jobMgr.JobPartMgr(p)
-	       plan := part.Plan()
-	       status = plan.JobPartStatus()
-	       jobDone = status.IsJobDone()
-	       time.Sleep(time.Second * 1)
-       }
+	<-waitForCompletion
+	part, _ := jobMgr.JobPartMgr(p)
+	plan := part.Plan()
+	status := plan.JobPartStatus()
+	jpp := part.Plan().Transfer(0)
+	errCode := jpp.ErrorCode()
 
-       part, _ := jobMgr.JobPartMgr(p)
-       jpp  := part.Plan().Transfer(0)
-       errCode := jpp.ErrorCode()
+	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
+		Log(pipeline.LogError, err.Error())
+	}
 
-       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
-	       Log(pipeline.LogError, err.Error())
-       }
+	if status != common.EJobStatus.Completed() {
+		return ErrorEx{code: errCode, msg: "STE Failed"}
+	}
 
-       if status != common.EJobStatus.Completed() {
-	       return ErrorEx{code: errCode, msg: "STE Failed"}
-       }
-
-       return nil
+	return nil
 }
 
-
 func Download(blobPath string, filePath string, blockSize int64) error {
-	dstResource, _ := cmd.SplitResourceString(filePath , common.ELocation.Local())
+	dstResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	srcResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
 	p := common.PartNumber(NextPartNum())
 
-	getBlobProperties := func (blobPath string) (*azblob.BlobGetPropertiesResponse, error) {
+	getBlobProperties := func(blobPath string) (*azblob.BlobGetPropertiesResponse, error) {
 		rawURL, _ := url.Parse(blobPath)
 		blobUrlParts := azblob.NewBlobURLParts(*rawURL)
 		blobUrlParts.BlobName = strings.TrimSuffix(blobUrlParts.BlobName, "/")
-	
+
 		// perform the check
 		blobURL := azblob.NewBlobURL(blobUrlParts.URL(), azblob.NewPipeline(azblob.NewAnonymousCredential(), azblob.PipelineOptions{}))
 		return blobURL.GetProperties(context.TODO(), azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
@@ -360,7 +353,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		BlobTags:           nil,
 	}
 
-	order := common.CopyJobPartOrderRequest {
+	order := common.CopyJobPartOrderRequest{
 		JobID:           JobMgr().JobID(),
 		PartNum:         p,
 		FromTo:          common.EFromTo.BlobLocal(),
@@ -370,48 +363,43 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		Priority:        common.EJobPriority.Normal(),
 		LogLevel:        common.ELogLevel.Debug(),
 		BlobAttributes: common.BlobTransferAttributes{
-				BlobType:                 common.EBlobType.BlockBlob(),
-				BlockSizeInBytes:         GetBlockSize(props.ContentLength(), blockSize),
+			BlobType:         common.EBlobType.BlockBlob(),
+			BlockSizeInBytes: GetBlockSize(props.ContentLength(), blockSize),
 		},
-		CommandString:  "NONE",
+		CommandString:   "NONE",
 		DestinationRoot: dstResource,
-		SourceRoot: srcResource,
-		Fpo: common.EFolderPropertiesOption.NoFolders(),
+		SourceRoot:      srcResource,
+		Fpo:             common.EFolderPropertiesOption.NoFolders(),
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
 	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
 	jppfn.Create(order)
 
-	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true)
+	waitForCompletion := make(chan struct{})
+	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
 
 	// Update jobPart Status with the status Manager
-       jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
-	       IsFinalPart:          true,
-	       TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
-	       FileTransfers:        order.Transfers.FileTransferCount,
-	       FolderTransfer:       order.Transfers.FolderTransferCount})
+	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
+		IsFinalPart:          true,
+		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
+		FileTransfers:        order.Transfers.FileTransferCount,
+		FolderTransfer:       order.Transfers.FolderTransferCount})
 
-       jobDone := false
-       var status common.JobStatus 
-       for !jobDone {
-	       part,_ := jobMgr.JobPartMgr(p)
-	       status = part.Plan().JobPartStatus()
-	       jobDone = status.IsJobDone()
-	       time.Sleep(time.Second * 1)
-       }
+	<-waitForCompletion
+	part, _ := jobMgr.JobPartMgr(p)
+	plan := part.Plan()
+	status := plan.JobPartStatus()
+	jpp := part.Plan().Transfer(0)
+	errCode := jpp.ErrorCode()
 
-       part, _ := jobMgr.JobPartMgr(p)
-       jpp  := part.Plan().Transfer(0)
-       errCode := jpp.ErrorCode()
+	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
+		Log(pipeline.LogError, err.Error())
+	}
 
-       if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
-	       Log(pipeline.LogError, err.Error())
-       }
+	if status != common.EJobStatus.Completed() {
+		return ErrorEx{code: errCode, msg: "STE Failed"}
+	}
 
-       if status != common.EJobStatus.Completed() {
-	       return ErrorEx{code: errCode, msg: "STE Failed"}
-       }
-
-       return nil
+	return nil
 }

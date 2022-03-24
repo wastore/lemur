@@ -26,23 +26,23 @@ import (
 
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
-	name                string
-	cred                azblob.Credential
-	httpClient          *http.Client
-	config              *archiveConfig
+	name       string
+	cred       azblob.Credential
+	httpClient *http.Client
+	config     *archiveConfig
 
 	//*Channels to interact wtih SAS Manager
-	getSAS              chan chan string
-	forceSASRefresh     chan time.Time
+	getSAS          chan chan string
+	forceSASRefresh chan time.Time
 }
 
 // AzMover returns a new *Mover
 func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mover {
 	return &Mover{
-		name:                fmt.Sprintf("az-%d", archiveID),
-		cred:                creds,
-		config:              cfg,
-		httpClient: 		 &http.Client{
+		name:   fmt.Sprintf("az-%d", archiveID),
+		cred:   creds,
+		config: cfg,
+		httpClient: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:           0, // No limit
 				MaxIdleConnsPerHost:    cfg.NumThreads,
@@ -50,12 +50,12 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 				TLSHandshakeTimeout:    10 * time.Second,
 				ExpectContinueTimeout:  1 * time.Second,
 				DisableKeepAlives:      false,
-				DisableCompression:     true, 
+				DisableCompression:     true,
 				MaxResponseHeaderBytes: 0,
 			},
 		},
-		getSAS:             make(chan chan string),
-		forceSASRefresh:    make(chan time.Time),
+		getSAS:          make(chan chan string),
+		forceSASRefresh: make(chan time.Time),
 	}
 }
 
@@ -97,7 +97,7 @@ func (m *Mover) getSASToken() (string, error) {
 	select {
 	case m.getSAS <- ret:
 		select {
-		case sas := <- ret:
+		case sas := <-ret:
 			return sas, nil
 		case <-time.After(time.Minute):
 			return "", errors.New("Failed to get SAS")
@@ -108,7 +108,7 @@ func (m *Mover) getSASToken() (string, error) {
 }
 
 // returns true if we could successfully ask SAS manager to refresh creds in 1minute
-func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
+func (m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 	select {
 	case m.forceSASRefresh <- prevSASCtx: //this will block until we've requested for a refresh
 		return true
@@ -117,9 +117,8 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 	}
 }
 
-
 /*
- * SASManager() 
+ * SASManager()
  * - Returns valid SAS on received channel when Archive/Restore/Return operations ask for it
  * - Updates SAS when operations request for it (i.e. when they fail with 403)
  * - Updates SAS every `CredRefreshInterval`
@@ -128,6 +127,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
  */
 func (m *Mover) SASManager() {
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
+	lastFetchTime := time.Now()
 
 	for {
 		retryDelay := 4 * time.Second
@@ -137,7 +137,7 @@ func (m *Mover) SASManager() {
 		select {
 		case <-time.After(defaultRefreshInterval): // we always try to refresh
 		case reqCtx := <-m.forceSASRefresh:
-			if reqCtx.Before(m.config.SASContext) {
+			if reqCtx.Before(lastFetchTime) {
 				//Nothing to be done, we've already updated sas.
 				continue
 			} // else we refresh sas
@@ -155,7 +155,7 @@ func (m *Mover) SASManager() {
 			if err == nil {
 				//we've a valid SAS
 				m.config.AzStorageSAS = sas
-				m.config.SASContext = time.Now()
+				lastFetchTime = time.Now()
 				util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
 				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextTryInterval).String()))
 				break
@@ -168,7 +168,7 @@ func (m *Mover) SASManager() {
 				"Failed to update SAS.\nReason: %s, try: %d",
 				err, try))
 			nextTryInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
-			if nextTryInterval >= time.Duration(1 * time.Minute) {
+			if nextTryInterval >= time.Duration(1*time.Minute) {
 				nextTryInterval = 1 * time.Minute
 			}
 			try++
