@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -169,6 +170,13 @@ func IsSASValid(sas string) bool {
 		if t.Before(time.Now()) {
 			Log(pipeline.LogError, "Expired SAS returned")
 			return false
+		}
+	}
+
+	if v := os.Getenv("COPYTOOL_IGNORE_SAS_PERMISSIONS"); v != "" {
+		ignore, err := strconv.ParseBool(v)
+		if err == nil && ignore{
+			return true
 		}
 	}
 
