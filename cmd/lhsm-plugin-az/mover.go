@@ -128,6 +128,7 @@ func (m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 func (m *Mover) SASManager() {
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 	lastFetchTime := time.Now()
+	nextScheduledUpdate := time.Now().Add(defaultRefreshInterval)
 
 	for {
 		retryDelay := 4 * time.Second
@@ -136,6 +137,7 @@ func (m *Mover) SASManager() {
 
 		select {
 		case <-time.After(defaultRefreshInterval): // we always try to refresh
+			nextScheduledUpdate = time.Now().Add(defaultRefreshInterval)
 		case reqCtx := <-m.forceSASRefresh:
 			if reqCtx.Before(lastFetchTime) {
 				//Nothing to be done, we've already updated sas.
@@ -157,21 +159,23 @@ func (m *Mover) SASManager() {
 				m.config.AzStorageSAS = sas
 				lastFetchTime = time.Now()
 				util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
-				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextTryInterval).String()))
+				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", nextScheduledUpdate.String()))
 				break
 			}
 
 			/*
 			 * Failed to update SAS. We'll retry with exponential delay.
 			 */
-			util.Log(pipeline.LogError, fmt.Sprintf(
-				"Failed to update SAS.\nReason: %s, try: %d",
-				err, try))
-			nextTryInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
-			if nextTryInterval >= time.Duration(1*time.Minute) {
+			nextTryInterval = time.Duration((math.Pow(2, float64(try))-1)) * retryDelay
+			if try >= 4 {
 				nextTryInterval = 1 * time.Minute
 			}
 			try++
+			
+			util.Log(pipeline.LogError, fmt.Sprintf(
+				"Failed to update SAS.\nReason: %s, try: %d",
+				err, try))
+			util.Log(pipeline.LogError, fmt.Sprintf("Next try at %s.", time.Now().Add(nextTryInterval)))
 
 			//retry after delay
 			time.Sleep(nextTryInterval)
