@@ -24,6 +24,9 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -31,6 +34,52 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
+
+
+type ErrorEx struct {
+	code int32
+	msg  string
+}
+
+func (e ErrorEx) ErrorCode() int32 {
+	return e.code
+}
+
+func (e ErrorEx) Error() string {
+	return e.msg
+}
+
+func ShouldRetry(err error) bool {
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			return true
+		}
+	}
+
+	if errEx, ok := err.(ErrorEx); ok {
+		if errEx.ErrorCode() == 403 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func ShouldRefreshCreds(err error) bool {
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		if stgErr.Response().StatusCode == 403 {
+			return true
+		}
+	}
+
+	if errEx, ok := err.(ErrorEx); ok {
+		if errEx.ErrorCode() == 403 {
+			return true
+		}
+	}
+
+	return false
+}
 
 //HTTPClientFactory returns http sender with given client
 func HTTPClientFactory(client *http.Client) pipeline.FactoryFunc {
@@ -96,25 +145,41 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 	return *secretResp.Value, nil
 }
 
-func IsSASValid(sas string) bool {
+func IsSASValid(sas string) (ok bool, reason string) {
 	q, _ := url.ParseQuery(sas)
-
 	if q.Get("sig") == "" {
-		Log(pipeline.LogError, "Invalid SAS returned. Missing signature")
-		return false
+		return false,"Missing signature"
 	}
-	if endTime := q.Get("se"); endTime != "" {
+	if endTime := q.Get("se"); endTime == "" {
+		return false,"Missing endTime"
+	} else {
 		t, err := time.Parse(time.RFC3339, endTime)
 		if err != nil {
-			Log(pipeline.LogError, "Invalid expiry time on SAS." + err.Error())
-			return false
+			return false,"Invalid expiry time on SAS."+err.Error()
 		}
 		if t.Before(time.Now()) {
-			Log(pipeline.LogError, "Expired SAS returned")
-			return false
+			return false, "Expired SAS returned"
 		}
 	}
-	return true
+
+	if v := os.Getenv("COPYTOOL_IGNORE_SAS_PERMISSIONS"); v != "" {
+		ignore, err := strconv.ParseBool(v)
+		if err == nil && ignore{
+			return true, ""
+		}
+	}
+
+	if signedPermissions := q.Get("sp"); signedPermissions == "" {
+		return false, "Missing permissions"
+	} else {
+		// we need (r)ead - (w)rite - (l)ist permissions the minimum
+		if !strings.ContainsRune(signedPermissions, 'r') ||
+			!strings.ContainsRune(signedPermissions, 'w') ||
+			!strings.ContainsRune(signedPermissions, 'l') {
+			return false, "Insufficient permissions"
+		}
+	}
+	return true, ""
 }
 
 func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {

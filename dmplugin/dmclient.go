@@ -7,6 +7,8 @@ package dmplugin
 import (
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"sync"
 	"syscall"
 
@@ -355,6 +357,7 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *pb.ActionIt
 			}
 			// debug.Printf("Got message id:%d op: %v %v", action.Id, action.Op, action.PrimaryPath)
 
+			action.TryCount = 0 //first try
 			actions <- action
 		}
 
@@ -399,10 +402,19 @@ func (dm *DataMoverClient) getActionHandler(op pb.Command) (ActionHandler, error
 }
 
 func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan *pb.ActionItem) {
+	item.TryCount += 1
+	debug.Printf("Retrying action %d.Trycount: %d", item.Id, item.TryCount)
 	actions <- item
 }
 
 func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
+	maxTryCount := 3
+	if r := os.Getenv("COPTOOL_RETRY_COUNT"); r != "" {
+		if v, err := strconv.Atoi(r); err == nil {
+			maxTryCount = v
+		}
+	}
+	
 	for item := range actions {
 		action := &dmAction{
 			status: dm.status,
@@ -414,7 +426,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 			err = actionFn(action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
-		if shouldRetry(err) {
+		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
 			dm.requeueItem(item, actions)
 		} else {
 			action.Finish(err)

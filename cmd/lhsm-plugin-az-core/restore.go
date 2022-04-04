@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -26,6 +27,7 @@ type RestoreOptions struct {
 	ExportPrefix    string
 	Pacer           util.Pacer
 	HTTPClient      *http.Client
+	OpStartTime     time.Time
 }
 
 var maxRetryPerDownloadBody = 5

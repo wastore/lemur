@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"sync"
 	"strconv"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -33,13 +32,13 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
-		configLock            sync.Mutex //currently only SAS is protected by this lock
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		HNSOverride           string `hcl:"hns_enabled"`
 		HNSEnabled            bool 
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
-		AzStorageSAS          string
+		AzStorageSAS          string `json:"-"`
+		SASContext            time.Time  `json:"-"` //Context is used by operations to know if they've latest SAS
 		Endpoint              string
 		Region                string
 		Container             string
@@ -114,17 +113,14 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
-	a.configLock.Lock()
-	defer a.configLock.Unlock()
-
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
 	}
 
-	if !util.IsSASValid(a.AzStorageSAS) {
-		return errors.New("Invalid SAS returned")
+	if ok, reason := util.IsSASValid(a.AzStorageSAS); !ok {
+		return errors.New("Invalid SAS returned " + reason)
 	}
 
 	return nil
