@@ -324,7 +324,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 }
 
 // Remove fulfills an HSM Remove request
-func (m *Mover) Remove(action dmplugin.Action) error {
+func (m *Mover) Remove(action dmplugin.Action) error { 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	if action.UUID() == "" {
@@ -361,4 +361,10 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	return nil
+}
+
+
+func (m *Mover) Cancel(action dmplugin.Action) error {
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	return errors.New("Cancel is not implemented")
 }
