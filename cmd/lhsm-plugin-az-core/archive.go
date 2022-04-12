@@ -40,6 +40,9 @@ const dfsEndPoint string = "https://%s.dfs.core.windows.net/"
 const parallelDirCount = 64 // Number parallel dir metadata uploads
 
 func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, err error) {
+	filepath := path.Join(o.MountRoot, blobPath)
+	blobPath = path.Join(o.ExportPrefix, blobPath)
+
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	cURL, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
 	containerURL := azblob.NewContainerURL(*cURL, p)
@@ -47,9 +50,9 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	meta := azblob.Metadata{}
 
 	//Get owner, group and perms
-	fileInfo, err := os.Stat(path.Join(o.MountRoot, blobPath))
+	fileInfo, err := os.Stat(filepath)
 	if err != nil {
-		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get fileInfo: %s", blobPath, err.Error()))
+		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get fileInfo: %s", filepath, err.Error()))
 		return 0, err
 	}
 
@@ -81,8 +84,8 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		meta["hdi_isfolder"] = "true"
 		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
 	} else {
-		fi, _ := os.Stat(path.Join(o.MountRoot, blobPath))
-		file, _ := os.Open(path.Join(o.MountRoot, blobPath))
+		fi, _ := os.Stat(filepath)
+		file, _ := os.Open(filepath)
 		defer file.Close()
 
 		_, err = azblob.UploadFileToBlockBlob(
