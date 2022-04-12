@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -221,7 +222,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	total, err := core.Archive(core.ArchiveOptions{
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	total, err := core.Archive(ctx, core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: m.config.Container,
 		ResourceSAS:   sas,
@@ -290,8 +294,10 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	contentLen, err := core.Restore(core.RestoreOptions{
+	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
 		ResourceSAS:     sas,

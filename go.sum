@@ -67,8 +67,8 @@ github.com/Azure/azure-sdk-for-go v48.2.0+incompatible h1:+t2P1j1r5N6lYgPiiz7ZbE
 github.com/Azure/azure-sdk-for-go v48.2.0+incompatible/go.mod h1:9XXNKU+eRnpl9moKnB4QOLf1HestfXbmab5FXxiDBjc=
 github.com/Azure/azure-storage-azcopy v10.0.2+incompatible h1:lZ0GwsP+H+aFqaiwfdCgYVJLUDnrCoEY5O6jZr61Npk=
 github.com/Azure/azure-storage-azcopy v10.0.2+incompatible/go.mod h1:evHwKj3G0Zrzr3V1wbTa/vPOOSALQMfueXXffMOZfms=
-github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220406080352-0e403508749f h1:ZhKEwTKsVfWp4g46mzz24YZL0hQ8rAPBDezEvhLBVY8=
-github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220406080352-0e403508749f/go.mod h1:B2dr7Pknq3UnZnRxMcSFT/R1OgFaztei10qn1XJnMoo=
+github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220408034209-ea602550f081 h1:UvaxqYTPkjjNEwYa0KgIWpDFsP8R6HJaqmeHyDUnkoI=
+github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220408034209-ea602550f081/go.mod h1:B2dr7Pknq3UnZnRxMcSFT/R1OgFaztei10qn1XJnMoo=
 github.com/Azure/azure-storage-blob-go v0.13.1-0.20210914164749-2d6cd3e07548 h1:7322q8PFKIeLn3Jc5vOFWUrG6IdboP+RNGFRkarxqtg=
 github.com/Azure/azure-storage-blob-go v0.13.1-0.20210914164749-2d6cd3e07548/go.mod h1:SMqIBi+SuiQH32bvyjngEewEeXoPfKMgWlBDaYf6fck=
 github.com/Azure/azure-storage-file-go v0.6.1-0.20201111053559-3c1754dc00a5 h1:aHEvBM4oXIWSTOVdL55nCYXO0Cl7ie3Ui5xMQhLVez8=

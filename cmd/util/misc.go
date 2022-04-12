@@ -249,7 +249,7 @@ func ResetPartNum() {
 	globalPartNum = 0
 }
 
-func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
+func Upload(ctx context.Context, filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
 	srcResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	dstResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
 	p := common.PartNumber(NextPartNum())
@@ -298,7 +298,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	jppfn.Create(order)
 
 	waitForCompletion := make(chan struct{})
-	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
 
 	// Update jobPart Status with the status Manager
 	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
@@ -307,7 +307,13 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 
-	<-waitForCompletion
+	select {
+	case <- ctx.Done():
+		jpm.Cancel()
+		<-waitForCompletion
+	case <-waitForCompletion:
+	}
+	
 	part, _ := jobMgr.JobPartMgr(p)
 	plan := part.Plan()
 	status := plan.JobPartStatus()
@@ -325,7 +331,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	return nil
 }
 
-func Download(blobPath string, filePath string, blockSize int64) error {
+func Download(ctx context.Context, blobPath string, filePath string, blockSize int64) error {
 	dstResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	srcResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
 	p := common.PartNumber(NextPartNum())
@@ -385,7 +391,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 	jppfn.Create(order)
 
 	waitForCompletion := make(chan struct{})
-	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
 
 	// Update jobPart Status with the status Manager
 	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
@@ -394,7 +400,13 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 
-	<-waitForCompletion
+	select {
+	case <- ctx.Done():
+		jpm.Cancel()
+		<-waitForCompletion
+	case <-waitForCompletion:
+	}
+	
 	part, _ := jobMgr.JobPartMgr(p)
 	plan := part.Plan()
 	status := plan.JobPartStatus()
