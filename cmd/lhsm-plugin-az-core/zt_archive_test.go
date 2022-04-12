@@ -43,7 +43,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
-	count, err := Archive(ArchiveOptions{
+	count, err := Archive(context.Background(), ArchiveOptions{
 		AccountName:   account,
 		ContainerName: containerName,
 		BlobName:      fileName,
@@ -129,7 +129,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
-	count, err := Archive(ArchiveOptions{
+	count, err := Archive(context.Background(), ArchiveOptions{
 		AccountName:   account,
 		ContainerName: containerName,
 		BlobName:      fileName,
