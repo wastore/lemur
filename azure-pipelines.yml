@@ -10,11 +10,13 @@ steps:
 - task: GoTool@0
   name: 'Set_up_Golang'
   inputs:
-    version: '1.14'
+    version: '1.17'
 
 - script: |
     echo Running tests...
-    go test -timeout 25m -race -short -cover ./cmd/lhsm-plugin-az-core
+    go test ./cmd/lhsm-plugin-az-core/ -timeout 25m -race -short -cover "-check.f"  TestRestoreSmallBlob
+    go test ./cmd/lhsm-plugin-az-core/ -timeout 25m -race -short -cover "-check.f"  TestPreservePermsRecursive
+    go test ./cmd/lhsm-plugin-az-core/ -timeout 25m -race -short -cover "-check.f"  TestUploadAndDownloadFileSingleIO
   displayName: 'Run lhms-plugin-az-core tests'
   env:
     ACCOUNT_NAME: $(ACCOUNT_NAME)

@@ -22,16 +22,22 @@ package util
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
+	"github.com/Azure/azure-storage-azcopy/v10/cmd"
+	"github.com/Azure/azure-storage-azcopy/v10/common"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
@@ -51,13 +57,13 @@ func (e ErrorEx) Error() string {
 
 func ShouldRetry(err error) bool {
 	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == 403 {
+		if stgErr.Response().StatusCode == http.StatusForbidden {
 			return true
 		}
 	}
 
 	if errEx, ok := err.(ErrorEx); ok {
-		if errEx.ErrorCode() == 403 {
+		if errEx.ErrorCode() == http.StatusForbidden {
 			return true
 		}
 	}
@@ -67,13 +73,13 @@ func ShouldRetry(err error) bool {
 
 func ShouldRefreshCreds(err error) bool {
 	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == 403 {
+		if stgErr.Response().StatusCode == http.StatusForbidden {
 			return true
 		}
 	}
 
 	if errEx, ok := err.(ErrorEx); ok {
-		if errEx.ErrorCode() == 403 {
+		if errEx.ErrorCode() == http.StatusForbidden {
 			return true
 		}
 	}
@@ -203,4 +209,197 @@ func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
 	}
 
 	return blockSize
+}
+
+var jobMgr ste.IJobMgr
+var globalPartNum uint32
+var partNumLock sync.Mutex
+
+func JobMgr() ste.IJobMgr {
+	return jobMgr
+}
+
+func SetJobMgr(jm ste.IJobMgr) {
+	jobMgr = jm
+}
+
+func NextPartNum() uint32 {
+	partNumLock.Lock()
+	defer partNumLock.Unlock()
+	if globalPartNum == math.MaxUint32 {
+		jobMgr.Reset(context.Background(), "Lustre")
+		globalPartNum = 0
+	}
+	ret := globalPartNum
+	globalPartNum = globalPartNum + 1
+	return ret
+}
+
+func ResetPartNum() {
+	partNumLock.Lock()
+	defer partNumLock.Unlock()
+	globalPartNum = 0
+}
+
+func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
+	srcResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
+	dstResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
+	p := common.PartNumber(NextPartNum())
+
+	fi, _ := os.Stat(filePath)
+
+	t := common.CopyTransfer{
+		Source:           "",
+		Destination:      "",
+		EntityType:       common.EEntityType.File(),
+		LastModifiedTime: fi.ModTime(),
+		SourceSize:       fi.Size(),
+		Metadata:         common.FromAzBlobMetadataToCommonMetadata(meta),
+	}
+
+	var metadata = ""
+	for k, v := range meta {
+		metadata = metadata + fmt.Sprintf("%s=%s;", k, v)
+	}
+	if len(metadata) > 0 { //Remove trailing ';'
+		metadata = metadata[:len(metadata)-1]
+	}
+
+	order := common.CopyJobPartOrderRequest{
+		JobID:           JobMgr().JobID(),
+		PartNum:         p,
+		FromTo:          common.EFromTo.LocalBlob(),
+		ForceWrite:      common.EOverwriteOption.True(),
+		ForceIfReadOnly: false,
+		AutoDecompress:  false,
+		Priority:        common.EJobPriority.Normal(),
+		LogLevel:        common.ELogLevel.Debug(),
+		BlobAttributes: common.BlobTransferAttributes{
+			BlobType:         common.EBlobType.BlockBlob(),
+			BlockSizeInBytes: GetBlockSize(fi.Size(), blockSize),
+			Metadata:         metadata,
+		},
+		CommandString:   "NONE",
+		DestinationRoot: dstResource,
+		SourceRoot:      srcResource,
+		Fpo:             common.EFolderPropertiesOption.NoFolders(),
+	}
+	order.Transfers.List = append(order.Transfers.List, t)
+
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
+	jppfn.Create(order)
+
+	waitForCompletion := make(chan struct{})
+	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+
+	// Update jobPart Status with the status Manager
+	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
+		IsFinalPart:          true,
+		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
+		FileTransfers:        order.Transfers.FileTransferCount,
+		FolderTransfer:       order.Transfers.FolderTransferCount})
+
+	<-waitForCompletion
+	part, _ := jobMgr.JobPartMgr(p)
+	plan := part.Plan()
+	status := plan.JobPartStatus()
+	jpp := part.Plan().Transfer(0)
+	errCode := jpp.ErrorCode()
+
+	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
+		Log(pipeline.LogError, err.Error())
+	}
+
+	if status != common.EJobStatus.Completed() {
+		return ErrorEx{code: errCode, msg: "STE Failed"}
+	}
+
+	return nil
+}
+
+func Download(blobPath string, filePath string, blockSize int64) error {
+	dstResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
+	srcResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
+	p := common.PartNumber(NextPartNum())
+
+	getBlobProperties := func(blobPath string) (*azblob.BlobGetPropertiesResponse, error) {
+		rawURL, _ := url.Parse(blobPath)
+		blobUrlParts := azblob.NewBlobURLParts(*rawURL)
+		blobUrlParts.BlobName = strings.TrimSuffix(blobUrlParts.BlobName, "/")
+
+		// perform the check
+		blobURL := azblob.NewBlobURL(blobUrlParts.URL(), azblob.NewPipeline(azblob.NewAnonymousCredential(), azblob.PipelineOptions{}))
+		return blobURL.GetProperties(context.TODO(), azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
+	}
+
+	props, err := getBlobProperties(blobPath)
+	if err != nil {
+		return err
+	}
+	t := common.CopyTransfer{
+		Source:             "",
+		Destination:        "",
+		EntityType:         common.EEntityType.File(),
+		LastModifiedTime:   props.LastModified(),
+		SourceSize:         props.ContentLength(),
+		ContentType:        props.ContentType(),
+		ContentEncoding:    props.ContentEncoding(),
+		ContentDisposition: props.ContentDisposition(),
+		ContentLanguage:    props.ContentLanguage(),
+		CacheControl:       props.CacheControl(),
+		ContentMD5:         props.ContentMD5(),
+		Metadata:           nil,
+		BlobType:           props.BlobType(),
+		BlobTags:           nil,
+	}
+
+	order := common.CopyJobPartOrderRequest{
+		JobID:           JobMgr().JobID(),
+		PartNum:         p,
+		FromTo:          common.EFromTo.BlobLocal(),
+		ForceWrite:      common.EOverwriteOption.True(),
+		ForceIfReadOnly: false,
+		AutoDecompress:  false,
+		Priority:        common.EJobPriority.Normal(),
+		LogLevel:        common.ELogLevel.Debug(),
+		BlobAttributes: common.BlobTransferAttributes{
+			BlobType:         common.EBlobType.BlockBlob(),
+			BlockSizeInBytes: GetBlockSize(props.ContentLength(), blockSize),
+		},
+		CommandString:   "NONE",
+		DestinationRoot: dstResource,
+		SourceRoot:      srcResource,
+		Fpo:             common.EFolderPropertiesOption.NoFolders(),
+	}
+	order.Transfers.List = append(order.Transfers.List, t)
+
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
+	jppfn.Create(order)
+
+	waitForCompletion := make(chan struct{})
+	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+
+	// Update jobPart Status with the status Manager
+	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
+		IsFinalPart:          true,
+		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
+		FileTransfers:        order.Transfers.FileTransferCount,
+		FolderTransfer:       order.Transfers.FolderTransferCount})
+
+	<-waitForCompletion
+	part, _ := jobMgr.JobPartMgr(p)
+	plan := part.Plan()
+	status := plan.JobPartStatus()
+	jpp := part.Plan().Transfer(0)
+	errCode := jpp.ErrorCode()
+
+	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
+		Log(pipeline.LogError, err.Error())
+	}
+
+	if status != common.EJobStatus.Completed() {
+		return ErrorEx{code: errCode, msg: "STE Failed"}
+	}
+
+	return nil
 }

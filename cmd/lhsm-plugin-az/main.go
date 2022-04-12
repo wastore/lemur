@@ -3,17 +3,21 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"os/signal"
 	"path"
+	rdbg "runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"strconv"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-azcopy/v10/common"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -50,6 +54,7 @@ type (
 		ExportPrefix          string `hcl:"exportprefix"`
 		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
 		azCreds               azblob.Credential
+		jobMgr                ste.IJobMgr `json:"-"`
 	}
 
 	archiveSet []*archiveConfig
@@ -67,6 +72,12 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
+
+		/* STE Parameters */
+		PlanDirectory string `hcl:"plan_dir"`
+		CacheLimit    int    `hcl:"cache_limit"`
+		LogLevel      string `hcl:"log_level"`
+		jobMgr        ste.IJobMgr
 	}
 )
 
@@ -188,6 +199,8 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 
 func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result := new(azConfig)
+	const defaultSTEMemoryLimit = 2 /* In GiBs */
+	defaultSTETempDir := path.Join(os.TempDir(), "copytool")
 
 	result.UploadPartSize = c.UploadPartSize
 	if other.UploadPartSize > 0 {
@@ -249,7 +262,72 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
 
+	/* STE parameters */
+	result.CacheLimit = defaultSTEMemoryLimit
+	if other.CacheLimit != 0 {
+		result.CacheLimit = other.CacheLimit
+	}
+	
+	result.LogLevel = c.LogLevel
+	if other.LogLevel != "" {
+		result.LogLevel = other.LogLevel
+	}
+	
+	result.PlanDirectory = defaultSTETempDir
+	if other.PlanDirectory != "" {
+		result.PlanDirectory = other.PlanDirectory
+	}
+	
 	return result
+}
+
+func (a *azConfig) initSTE() (err error) {
+	jobID := common.NewJobID()
+	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
+	var pacer ste.PacerAdmin = ste.NewNullAutoPacer()
+	var logLevel common.LogLevel
+	common.AzcopyJobPlanFolder = a.PlanDirectory
+
+	if err := logLevel.Parse(a.LogLevel); err != nil {
+		logLevel = common.ELogLevel.Info()
+	}
+	logger := common.NewSysLogger(jobID, logLevel, "lhsm-plugin-az")
+	logger.OpenLog()
+
+	os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
+	if a.Bandwidth != 0 {
+		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth*1024*1024), 0)
+	}
+
+	a.jobMgr = ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
+		jobID,
+		context.Background(),
+		common.NewNullCpuMonitor(),
+		common.ELogLevel.Error(),
+		"Lustre",
+		a.PlanDirectory,
+		&tuner,
+		pacer,
+		common.NewMultiSizeSlicePool(4*1024*1024*1024 /* 4GiG */),
+		common.NewCacheLimiter(int64(a.CacheLimit*1024*1024*1024)),
+		common.NewCacheLimiter(int64(64)),
+		logger,
+		true)
+
+	/*
+	 This needs to be moved to a better location
+	*/
+	go func() {
+		time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
+		rdbg.SetGCPercent(20)        // activate more aggressive/frequent GC than the default
+	}()
+
+	util.SetJobMgr(a.jobMgr)
+	util.ResetPartNum()
+	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
+	common.GetLifecycleMgr().SetForceLogging()
+
+	return nil
 }
 
 func init() {
@@ -316,6 +394,10 @@ func main() {
 
 	if len(cfg.Archives) == 0 {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
+	}
+
+	if err = cfg.initSTE(); err != nil {
+		alert.Abort(errors.Wrap(err, "Failed to initialize STE"))
 	}
 
 	rc, err := llapi.RegisterErrorCB(cfg.EventFIFOPath)

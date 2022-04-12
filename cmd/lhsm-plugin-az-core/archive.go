@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-azcopy/v10/azbfs"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/lemur/cmd/util"
 )
@@ -63,14 +64,16 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	}
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
-	var getACLResp *azblob.BlobGetAccessControlResponse
+	var getACLResp azbfs.BlobFSAccessControl
 
 	if o.HNSEnabled {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
-		getACLResp, err = dfsURL.GetAccessControl(ctx, nil, nil, nil, nil, nil, nil, nil, nil)
-		if stgErr, ok := err.(azblob.StorageError); err != nil || ok && stgErr.ServiceCode() != azblob.ServiceCodeBlobNotFound {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", dfsURL.URL().Path, err.Error()))
+		fsURL := azbfs.NewFileSystemURL(*dfsEP, p)
+		fileURL := fsURL.NewRootDirectoryURL().NewFileURL(blobPath)
+		
+		getACLResp, err = fileURL.GetAccessControl(ctx)
+		if stgErr, ok := err.(azbfs.StorageError); err != nil || ok && stgErr.Response().StatusCode != http.StatusNotFound {
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", fileURL.URL().Path, err.Error()))
 			return 0, err
 		}
 	}
@@ -82,19 +85,9 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
-		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
-	} else {
-		fi, _ := os.Stat(filepath)
-		file, _ := os.Open(filepath)
-		defer file.Close()
-
-		_, err = azblob.UploadFileToBlockBlob(
-			ctx, file, blobURL,
-			azblob.UploadToBlockBlobOptions{
-				BlockSize:   util.GetBlockSize(fi.Size(), o.BlockSize),
-				Parallelism: o.Parallelism,
-				Metadata:    meta,
-			})
+		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, nil, azblob.ClientProvidedKeyOptions{})
+	} else {	
+		err = util.Upload(blobPath, blobURL.String(), o.BlockSize, meta)
 	}
 
 	if err != nil {
@@ -102,19 +95,12 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		return 0, err
 	}
 
-	if o.HNSEnabled && getACLResp != nil {
+	if o.HNSEnabled {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		dfsURL := azblob.NewContainerURL(*dfsEP, p).NewBlockBlobURL(blobPath)
-		acl := getACLResp.XMsACL()
-		owner := getACLResp.XMsOwner()
-		group := getACLResp.XMsGroup()
-		permissions := getACLResp.XMsPermissions()
-		_, err := dfsURL.SetAccessControl(ctx, nil, nil, nil, nil, nil, &acl, nil, nil, nil, nil, nil)
-		if err != nil {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set Access Control: %s", blobPath, err.Error()))
-			return 0, err
-		}
-		_, err = dfsURL.SetAccessControl(ctx, nil, nil, &owner, &group, &permissions, nil, nil, nil, nil, nil, nil)
+		fsURL := azbfs.NewFileSystemURL(*dfsEP, p)
+		fileURL := fsURL.NewRootDirectoryURL().NewFileURL(blobPath)
+
+		_, err := fileURL.SetAccessControl(ctx, getACLResp)
 		if err != nil {
 			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set owner: %s", blobPath, err.Error()))
 			return 0, err
