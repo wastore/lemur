@@ -31,6 +31,7 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
+	actions             map[string]context.CancelFunc //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
 	getSAS              chan chan string
@@ -57,6 +58,7 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 		},
 		getSAS:             make(chan chan string),
 		forceSASRefresh:    make(chan time.Time),
+		actions:            make(map[string]context.CancelFunc),
 	}
 }
 
@@ -225,6 +227,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	m.actions[action.UUID()] = cancel
+
 	total, err := core.Archive(ctx, core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: m.config.Container,
@@ -250,6 +254,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+
+	delete(m.actions, action.UUID())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -297,6 +303,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	m.actions[action.UUID()] = cancel
+
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
@@ -319,6 +327,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+
+	delete(m.actions, action.UUID())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -372,5 +382,9 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 
 func (m *Mover) Cancel(action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	return errors.New("Cancel is not implemented")
+	if cancel, ok := m.actions[action.UUID()]; ok {
+		cancel()
+		return nil
+	}
+	return errors.New("Could not find action with specified UUID")
 }
