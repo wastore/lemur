@@ -314,10 +314,9 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 	case <-waitForCompletion:
 	}
 	
-	part, _ := jobMgr.JobPartMgr(p)
-	plan := part.Plan()
+	plan := jpm.Plan()
 	status := plan.JobPartStatus()
-	jpp := part.Plan().Transfer(0)
+	jpp := jpm.Plan().Transfer(0)
 	errCode := jpp.ErrorCode()
 
 	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
