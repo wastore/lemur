@@ -37,7 +37,8 @@ func Restore(o RestoreOptions) (int64, error) {
 	defer cancel()
 
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
+	// We probably do not need o.ExportPrefix here. We have the full path in o.BlobName(import prefix included)
+    blobPath := path.Join(o.ContainerName, o.BlobName)
 
 	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))
 
@@ -49,7 +50,7 @@ func Restore(o RestoreOptions) (int64, error) {
 		return 0, err
 	}
 	contentLen := blobProp.ContentLength()
-	err = util.Download(blobURL.String(), o.DestinationPath, o.BlockSize) 
+	err = util.Download(blobURL.String(), o.DestinationPath, o.BlockSize)
 
 	return contentLen, err
 }
