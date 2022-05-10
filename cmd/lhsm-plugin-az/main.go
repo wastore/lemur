@@ -3,18 +3,21 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"os/signal"
 	"path"
+	rdbg "runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"sync"
-	"strconv"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-storage-azcopy/v10/common"
+	"github.com/Azure/azure-storage-azcopy/v10/ste"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
@@ -33,13 +36,13 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
-		configLock            sync.Mutex //currently only SAS is protected by this lock
 		AzStorageAccount      string `hcl:"az_storage_account"`
 		HNSOverride           string `hcl:"hns_enabled"`
 		HNSEnabled            bool 
 		AzStorageKVName       string `hcl:"az_kv_name"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
-		AzStorageSAS          string
+		AzStorageSAS          string `json:"-"`
+		SASContext            time.Time  `json:"-"` //Context is used by operations to know if they've latest SAS
 		Endpoint              string
 		Region                string
 		Container             string
@@ -51,6 +54,7 @@ type (
 		ExportPrefix          string `hcl:"exportprefix"`
 		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
 		azCreds               azblob.Credential
+		jobMgr                ste.IJobMgr `json:"-"`
 	}
 
 	archiveSet []*archiveConfig
@@ -68,6 +72,12 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
+
+		/* STE Parameters */
+		PlanDirectory string `hcl:"plan_dir"`
+		CacheLimit    int    `hcl:"cache_limit"`
+		LogLevel      string `hcl:"log_level"`
+		jobMgr        ste.IJobMgr
 	}
 )
 
@@ -114,17 +124,14 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 		return errors.New("No Az credentials found; cannot initialize data mover")
 	}
 
-	a.configLock.Lock()
-	defer a.configLock.Unlock()
-
 	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
 	}
 
-	if !util.IsSASValid(a.AzStorageSAS) {
-		return errors.New("Invalid SAS returned")
+	if ok, reason := util.IsSASValid(a.AzStorageSAS); !ok {
+		return errors.New("Invalid SAS returned " + reason)
 	}
 
 	return nil
@@ -192,6 +199,8 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 
 func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result := new(azConfig)
+	const defaultSTEMemoryLimit = 2 /* In GiBs */
+	defaultSTETempDir := path.Join(os.TempDir(), "copytool")
 
 	result.UploadPartSize = c.UploadPartSize
 	if other.UploadPartSize > 0 {
@@ -253,7 +262,72 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
 
+	/* STE parameters */
+	result.CacheLimit = defaultSTEMemoryLimit
+	if other.CacheLimit != 0 {
+		result.CacheLimit = other.CacheLimit
+	}
+	
+	result.LogLevel = c.LogLevel
+	if other.LogLevel != "" {
+		result.LogLevel = other.LogLevel
+	}
+	
+	result.PlanDirectory = defaultSTETempDir
+	if other.PlanDirectory != "" {
+		result.PlanDirectory = other.PlanDirectory
+	}
+	
 	return result
+}
+
+func (a *azConfig) initSTE() (err error) {
+	jobID := common.NewJobID()
+	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
+	var pacer ste.PacerAdmin = ste.NewNullAutoPacer()
+	var logLevel common.LogLevel
+	common.AzcopyJobPlanFolder = a.PlanDirectory
+
+	if err := logLevel.Parse(a.LogLevel); err != nil {
+		logLevel = common.ELogLevel.Info()
+	}
+	logger := common.NewSysLogger(jobID, logLevel, "lhsm-plugin-az")
+	logger.OpenLog()
+
+	os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
+	if a.Bandwidth != 0 {
+		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth*1024*1024), 0)
+	}
+
+	a.jobMgr = ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
+		jobID,
+		context.Background(),
+		common.NewNullCpuMonitor(),
+		common.ELogLevel.Error(),
+		"Lustre",
+		a.PlanDirectory,
+		&tuner,
+		pacer,
+		common.NewMultiSizeSlicePool(4*1024*1024*1024 /* 4GiG */),
+		common.NewCacheLimiter(int64(a.CacheLimit*1024*1024*1024)),
+		common.NewCacheLimiter(int64(64)),
+		logger,
+		true)
+
+	/*
+	 This needs to be moved to a better location
+	*/
+	go func() {
+		time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
+		rdbg.SetGCPercent(20)        // activate more aggressive/frequent GC than the default
+	}()
+
+	util.SetJobMgr(a.jobMgr)
+	util.ResetPartNum()
+	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
+	common.GetLifecycleMgr().SetForceLogging()
+
+	return nil
 }
 
 func init() {
@@ -320,6 +394,10 @@ func main() {
 
 	if len(cfg.Archives) == 0 {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
+	}
+
+	if err = cfg.initSTE(); err != nil {
+		alert.Abort(errors.Wrap(err, "Failed to initialize STE"))
 	}
 
 	rc, err := llapi.RegisterErrorCB(cfg.EventFIFOPath)

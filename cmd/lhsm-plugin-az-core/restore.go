@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
+	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/pkg/errors"
 	"github.com/wastore/lemur/cmd/util"
 )
 
@@ -26,6 +25,7 @@ type RestoreOptions struct {
 	ExportPrefix    string
 	Pacer           util.Pacer
 	HTTPClient      *http.Client
+	OpStartTime     time.Time
 }
 
 var maxRetryPerDownloadBody = 5
@@ -44,24 +44,13 @@ func Restore(o RestoreOptions) (int64, error) {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
 
 	blobURL := azblob.NewBlobURL(*u, p)
-	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{})
+	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
-		return 0, errors.Wrapf(err, "GetProperties on %s failed", o.BlobName)
+		return 0, err
 	}
 	contentLen := blobProp.ContentLength()
-
-	file, _ := os.Create(o.DestinationPath)
-	defer file.Close()
-	err = azblob.DownloadBlobToFile(
-		ctx, blobURL, 0, 0, file,
-		azblob.DownloadFromBlobOptions{
-			BlockSize:   util.GetBlockSize(contentLen, o.BlockSize),
-			Parallelism: o.Parallelism,
-			RetryReaderOptionsPerBlock: azblob.RetryReaderOptions{
-				MaxRetryRequests: maxRetryPerDownloadBody,
-				NotifyFailedRead: util.NewReadLogFunc(u.String()),
-			},
-		})
+	
+	err = util.Download(blobURL.String(), o.DestinationPath, o.BlockSize)
 
 	return contentLen, err
 }
