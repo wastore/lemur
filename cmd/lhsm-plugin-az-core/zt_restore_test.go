@@ -1,13 +1,15 @@
 package lhsm_plugin_az_core
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/lemur/cmd/util"
-	"github.com/Azure/azure-pipeline-go/pipeline"
 	chk "gopkg.in/check.v1"
 )
 
@@ -30,7 +32,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	reader, srcData := getRandomDataAndReader(fileSize)
 	_, err := blobURL.Upload(ctx, reader, azblob.BlobHTTPHeaders{},
 		nil, azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{}, 
-		azblob.ClientProvidedKeyOptions{})
+		azblob.ClientProvidedKeyOptions{}, azblob.ImmutabilityPolicyOptions{})
 	c.Assert(err, chk.IsNil)
 
 	// set up destination file
@@ -48,7 +50,8 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
 	blobName = containerName + "/" + blobName
-	count, err := Restore(RestoreOptions{
+	count, err := Restore(context.TODO(),
+			RestoreOptions{
 		AccountName:     account,
 		ContainerName:   "",
 		BlobName:        blobName,
@@ -57,6 +60,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
 		HTTPClient: &http.Client{},
+		OpStartTime: time.Now(),
 	})
 
 	// make sure we got the right info back
