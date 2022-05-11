@@ -243,7 +243,7 @@ func createNewDirectoryStub(c *chk.C, container azblob.ContainerURL, dirPath str
 func createNewAppendBlob(c *chk.C, container azblob.ContainerURL, prefix string) (blob azblob.AppendBlobURL, name string) {
 	blob, name = getAppendBlobURL(c, container, prefix)
 
-	resp, err := blob.Create(ctx, azblob.BlobHTTPHeaders{}, nil, azblob.BlobAccessConditions{})
+	resp, err := blob.Create(ctx, azblob.BlobHTTPHeaders{}, nil, azblob.BlobAccessConditions{}, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 
 	c.Assert(err, chk.IsNil)
 	c.Assert(resp.StatusCode(), chk.Equals, 201)
@@ -253,7 +253,7 @@ func createNewAppendBlob(c *chk.C, container azblob.ContainerURL, prefix string)
 func createNewPageBlob(c *chk.C, container azblob.ContainerURL, prefix string) (blob azblob.PageBlobURL, name string) {
 	blob, name = getPageBlobURL(c, container, prefix)
 
-	resp, err := blob.Create(ctx, azblob.PageBlobPageBytes*10, 0, azblob.BlobHTTPHeaders{}, nil, azblob.BlobAccessConditions{}, azblob.PremiumPageBlobAccessTierNone)
+	resp, err := blob.Create(ctx, azblob.PageBlobPageBytes*10, 0, azblob.BlobHTTPHeaders{}, nil, azblob.BlobAccessConditions{}, azblob.PremiumPageBlobAccessTierNone, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 
 	c.Assert(err, chk.IsNil)
 	c.Assert(resp.StatusCode(), chk.Equals, 201)
