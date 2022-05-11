@@ -37,7 +37,7 @@ func Restore(o RestoreOptions) (int64, error) {
 	defer cancel()
 
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	blobPath := path.Join(o.ContainerName, o.ExportPrefix, o.BlobName)
+	blobPath := path.Join(o.ContainerName, o.BlobName)
 
 	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))
 
