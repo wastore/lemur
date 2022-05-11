@@ -218,7 +218,8 @@ func createNewBlockBlob(c *chk.C, container azblob.ContainerURL, prefix string) 
 	blob, name = getBlockBlobURL(c, container, prefix)
 
 	cResp, err := blob.Upload(ctx, strings.NewReader(blockBlobDefaultData), azblob.BlobHTTPHeaders{},
-		nil, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
+		nil, azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{},
+	azblob.ClientProvidedKeyOptions{})
 
 	c.Assert(err, chk.IsNil)
 	c.Assert(cResp.StatusCode(), chk.Equals, 201)
@@ -230,7 +231,8 @@ func createNewDirectoryStub(c *chk.C, container azblob.ContainerURL, dirPath str
 	dir := container.NewBlockBlobURL(dirPath)
 
 	cResp, err := dir.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{},
-		azblob.Metadata{"hdi_isfolder": "true"}, azblob.BlobAccessConditions{}, azblob.AccessTierNone)
+		azblob.Metadata{"hdi_isfolder": "true"}, azblob.BlobAccessConditions{}, azblob.AccessTierNone,
+	azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 
 	c.Assert(err, chk.IsNil)
 	c.Assert(cResp.StatusCode(), chk.Equals, 201)
