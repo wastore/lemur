@@ -68,20 +68,20 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if o.HNSEnabled {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		fsURL := azbfs.NewFileSystemURL(*dfsEP, p)
+		fsURL := azbfs.NewFileSystemURL(*dfsEP, azbfs.NewPipeline(azbfs.NewAnonymousCredential(), azbfs.PipelineOptions{}))
 		fileURL := fsURL.NewRootDirectoryURL().NewFileURL(blobPath)
 		
 		getACLResp, err = fileURL.GetAccessControl(ctx)
-		if stgErr, ok := err.(azbfs.StorageError); err != nil || ok && stgErr.Response().StatusCode != http.StatusNotFound {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s", fileURL.URL().Path, err.Error()))
+		if stgErr, ok := err.(azbfs.StorageError); err != nil && ok && stgErr.Response().StatusCode != http.StatusNotFound {
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s BlobPath %s", fileURL.URL().Path, err.Error(), blobPath))
 			return 0, err
 		}
+	} else {
+		meta["permissions"] = fmt.Sprintf("%04o", permissions)
+		meta["modtime"] = modTime
+		meta["owner"] = owner
+		meta["group"] = group
 	}
-
-	meta["permissions"] = fmt.Sprintf("%04o", permissions)
-	meta["modtime"] = modTime
-	meta["owner"] = owner
-	meta["group"] = group
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
@@ -95,14 +95,15 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 		return 0, err
 	}
 
-	if o.HNSEnabled {
+	if o.HNSEnabled && (getACLResp.ACL != "" || getACLResp.Group != "" || getACLResp.Owner != "") {
 		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
 		fsURL := azbfs.NewFileSystemURL(*dfsEP, p)
 		fileURL := fsURL.NewRootDirectoryURL().NewFileURL(blobPath)
 
+		getACLResp.Permissions = ""
 		_, err := fileURL.SetAccessControl(ctx, getACLResp)
 		if err != nil {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set owner: %s", blobPath, err.Error()))
+			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set AccessControl: %s", blobPath, err.Error()))
 			return 0, err
 		}
 	}

@@ -142,10 +142,10 @@ func (a *archiveConfig) setAccountType() (err error) {
 		a.HNSEnabled = val
 		return nil
 	}
-	sURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", a.AzStorageAccount, a.AzStorageSAS))
-	serviceURL := azblob.NewServiceURL(*sURL, azblob.NewPipeline(a.azCreds, azblob.PipelineOptions{}))
+	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", a.AzStorageAccount, a.Container, a.AzStorageSAS))
+	containerURL := azblob.NewContainerURL(*cURL, azblob.NewPipeline(a.azCreds,azblob.PipelineOptions{}))
 
-	resp, err := serviceURL.GetAccountInfo(context.Background())
+	resp, err := containerURL.GetAccountInfo(context.Background())
 	if err != nil {
 		return err
 	}
