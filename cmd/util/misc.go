@@ -152,6 +152,14 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 }
 
 func IsSASValid(sas string) (ok bool, reason string) {
+	if sas == "" {
+		return false, "Empty string returned."
+	}
+
+	if sas[0] == '?' {
+		sas = sas[1:]
+	}
+	
 	q, _ := url.ParseQuery(sas)
 	if q.Get("sig") == "" {
 		return false,"Missing signature"
