@@ -227,7 +227,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.actions[action.UUID()] = cancel
+	m.actions[action.PrimaryPath()] = cancel
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
@@ -255,7 +255,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	delete(m.actions, action.UUID())
+	delete(m.actions, action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -303,7 +303,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.actions[action.UUID()] = cancel
+	m.actions[action.PrimaryPath()] = cancel
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
@@ -328,7 +328,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
-	delete(m.actions, action.UUID())
+	delete(m.actions, action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -382,7 +382,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 
 func (m *Mover) Cancel(action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	if cancel, ok := m.actions[action.UUID()]; ok {
+	if cancel, ok := m.actions[action.PrimaryPath()]; ok {
 		cancel()
 		return nil
 	}
