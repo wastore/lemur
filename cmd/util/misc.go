@@ -30,11 +30,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
+	"github.com/Azure/azure-storage-azcopy/v10/azbfs"
 	"github.com/Azure/azure-storage-azcopy/v10/cmd"
 	"github.com/Azure/azure-storage-azcopy/v10/common"
 	"github.com/Azure/azure-storage-azcopy/v10/ste"
@@ -219,6 +221,26 @@ func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
 	return blockSize
 }
 
+func UnixError(err error) (ret int32) {
+	if err == nil {
+		ret = int32(0)
+	}
+
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		ret =  int32(stgErr.Response().StatusCode)
+	} else if stgErr, ok := err.(azbfs.StorageError); ok {
+		ret =  int32(stgErr.Response().StatusCode)
+	} else if errEx, ok := err.(ErrorEx); ok {
+		ret = errEx.ErrorCode()
+	} else {
+		ret = int32(syscall.EINVAL)
+	}
+
+	Log(pipeline.LogError, fmt.Sprintf("For error %v, returned status %d", err, ret))
+
+	return ret
+}
+
 var jobMgr ste.IJobMgr
 var globalPartNum uint32
 var partNumLock sync.Mutex
@@ -307,14 +329,17 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 
+	plan := jpm.Plan()
+
+	canceled := false
 	select {
 	case <- ctx.Done():
+		canceled = true
 		jpm.Cancel()
 		<-waitForCompletion
 	case <-waitForCompletion:
 	}
 	
-	plan := jpm.Plan()
 	status := plan.JobPartStatus()
 	jpp := jpm.Plan().Transfer(0)
 	errCode := jpp.ErrorCode()
@@ -323,6 +348,9 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		Log(pipeline.LogError, err.Error())
 	}
 
+	if canceled {
+		return ErrorEx{code: int32(syscall.ECANCELED), msg: "Job Cancelled"}
+	}
 	if status != common.EJobStatus.Completed() {
 		return ErrorEx{code: errCode, msg: "STE Failed"}
 	}
@@ -398,15 +426,18 @@ func Download(ctx context.Context, blobPath string, filePath string, blockSize i
 		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
+	
+	part, _ := jobMgr.JobPartMgr(p)
 
+	canceled := false		
 	select {
 	case <- ctx.Done():
+		canceled = true
 		jpm.Cancel()
 		<-waitForCompletion
 	case <-waitForCompletion:
 	}
 	
-	part, _ := jobMgr.JobPartMgr(p)
 	plan := part.Plan()
 	status := plan.JobPartStatus()
 	jpp := part.Plan().Transfer(0)
@@ -416,6 +447,9 @@ func Download(ctx context.Context, blobPath string, filePath string, blockSize i
 		Log(pipeline.LogError, err.Error())
 	}
 
+	if canceled {
+		return ErrorEx{code: int32(syscall.ECANCELED), msg: "Job Cancelled"}
+	}
 	if status != common.EJobStatus.Completed() {
 		return ErrorEx{code: errCode, msg: "STE Failed"}
 	}

@@ -13,9 +13,10 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent"
 	pb "github.com/wastore/lemur/pdm"
-	"github.com/intel-hpdd/logging/debug"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -208,23 +209,24 @@ func (s *dmRPCServer) StatusStream(stream pb.DataMover_StatusStreamServer) error
 		ep.mu.Lock()
 		action, ok := ep.actions[agent.ActionID(status.Id)]
 		ep.mu.Unlock()
-		if ok {
-			completed, err := action.Update(status)
-			if completed {
-				ep.mu.Lock()
-				delete(ep.actions, agent.ActionID(status.Id))
-				ep.mu.Unlock()
-			} else if err != nil {
-				debug.Printf("Status update for 0x%x did not complete: %s", status.Id, err)
-				ep.mu.Lock()
-				delete(ep.actions, agent.ActionID(status.Id))
-				ep.mu.Unlock()
 
+		if !ok {
+			debug.Printf("! unknown id: %x", status.Id)
+			continue
+		}
+
+		// Cancelled Op will update the status for Cancel action. Skip here.
+		if ok && action.Handle().Action() !=  llapi.HsmActionCancel {
+			_, err := action.Update(status)
+			if err != nil {
+				debug.Printf("Status update for 0x%x did not complete: %s", status.Id, err)
 				// send cancel to mover
 			}
-		} else {
-			debug.Printf("! unknown id: %x", status.Id)
 		}
+
+		ep.mu.Lock()
+		delete(ep.actions, agent.ActionID(status.Id))
+		ep.mu.Unlock()
 
 	}
 }
