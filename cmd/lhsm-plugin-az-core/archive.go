@@ -86,8 +86,8 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
 		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, nil, azblob.ClientProvidedKeyOptions{})
-	} else {	
-		err = util.Upload(blobPath, blobURL.String(), o.BlockSize, meta)
+	} else {
+		err = util.Upload(filepath, blobURL.String(), o.BlockSize, meta)	
 	}
 
 	if err != nil {
