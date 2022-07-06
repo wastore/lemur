@@ -30,6 +30,10 @@ import (
 	"github.com/wastore/lemur/cmd/util"
 	"github.com/wastore/lemur/dmplugin"
 	"github.com/wastore/lemur/pkg/fsroot"
+
+	"net/http"
+	_"net/http/pprof"
+	"github.com/pkg/profile"
 )
 
 type (
@@ -379,6 +383,13 @@ func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
 }
 
 func main() {
+
+	defer profile.Start(profile.MemProfile).Stop()
+
+	go func() {
+		http.ListenAndServe(":8089", nil)
+	}()
+
 	plugin, err := dmplugin.New(path.Base(os.Args[0]), func(path string) (fsroot.Client, error) {
 		return fsroot.New(path)
 	})

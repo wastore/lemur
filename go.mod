@@ -20,6 +20,7 @@ require (
 	github.com/intel-hpdd/logging v0.0.0-20170320184255-0ce155fc7407
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
+	github.com/pkg/profile v1.6.0
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
 	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
