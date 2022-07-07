@@ -427,7 +427,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
 		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
-			dm.requeueItem(item, actions)
+			go dm.requeueItem(item, actions)
 		} else {
 			action.Finish(err)
 		}
