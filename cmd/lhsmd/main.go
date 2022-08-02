@@ -79,11 +79,13 @@ func run(conf *agent.Config) error {
 		return errors.Wrap(err, "Error creating agent")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	interruptHandler(func() {
+		cancel()
 		ct.Stop()
 	})
 
-	return errors.Wrap(ct.Start(context.Background()),
+	return errors.Wrap(ct.Start(ctx),
 		"Error in HsmAgent.Start()")
 }
 
