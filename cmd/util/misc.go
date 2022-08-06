@@ -314,6 +314,10 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	jpp := part.Plan().Transfer(0)
 	errCode := jpp.ErrorCode()
 
+	if p != 0 {
+		part.Close()
+	}
+
 	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
 		Log(pipeline.LogError, err.Error())
 	}
