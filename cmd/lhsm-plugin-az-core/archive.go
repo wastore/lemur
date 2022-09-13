@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-storage-azcopy/v10/azbfs"
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/wastore/lemur/cmd/util"
 )
@@ -64,24 +63,11 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	}
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
-	var getACLResp azbfs.BlobFSAccessControl
 
-	if o.HNSEnabled {
-		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		fsURL := azbfs.NewFileSystemURL(*dfsEP, azbfs.NewPipeline(azbfs.NewAnonymousCredential(), azbfs.PipelineOptions{}))
-		fileURL := fsURL.NewRootDirectoryURL().NewFileURL(blobPath)
-		
-		getACLResp, err = fileURL.GetAccessControl(ctx)
-		if stgErr, ok := err.(azbfs.StorageError); err != nil && ok && stgErr.Response().StatusCode != http.StatusNotFound {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get Access Control: %s BlobPath %s", fileURL.URL().Path, err.Error(), blobPath))
-			return 0, err
-		}
-	} else {
-		meta["permissions"] = fmt.Sprintf("%04o", permissions)
-		meta["modtime"] = modTime
-		meta["owner"] = owner
-		meta["group"] = group
-	}
+	meta["permissions"] = fmt.Sprintf("%04o", permissions)
+	meta["modtime"] = modTime
+	meta["owner"] = owner
+	meta["group"] = group
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
@@ -93,19 +79,6 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to upload blob: %s", blobPath, err.Error()))
 		return 0, err
-	}
-
-	if o.HNSEnabled && (getACLResp.ACL != "" || getACLResp.Group != "" || getACLResp.Owner != "") {
-		dfsEP, _ := url.Parse(fmt.Sprintf(dfsEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-		fsURL := azbfs.NewFileSystemURL(*dfsEP, p)
-		fileURL := fsURL.NewRootDirectoryURL().NewFileURL(blobPath)
-
-		getACLResp.Permissions = ""
-		_, err := fileURL.SetAccessControl(ctx, getACLResp)
-		if err != nil {
-			util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to set AccessControl: %s", blobPath, err.Error()))
-			return 0, err
-		}
 	}
 
 	return fileInfo.Size(), err
