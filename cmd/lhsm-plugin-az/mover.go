@@ -149,7 +149,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 		}
 
 		for { //loop till we've a valid SAS
-			sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+			sas, err := util.GetKVSecret(m.config.AzStorageKVURL, m.config.AzStorageKVSecretName)
 			if err == nil {
 				if ok, reason := util.IsSASValid(sas); !ok {
 					err = errors.New("Invalid SAS returned. " + reason)
@@ -230,8 +230,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	m.actions[action.PrimaryPath()] = cancel
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
-		AccountName:   m.config.AzStorageAccount,
-		ContainerName: m.config.Container,
+		ContainerURL:  m.config.ContainerURL(),
 		ResourceSAS:   sas,
 		MountRoot:     m.config.MountRoot,
 		BlobName:      fileKey,
@@ -264,8 +263,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	u := url.URL{
 		Scheme: "az",
-		Host:   fmt.Sprintf("%s.blob.core.windows.net/%s", m.config.AzStorageAccount, m.config.Container),
-		Path:   fileKey,
+		Host:   m.config.ContainerURL().Host,
+		Path:   m.config.ContainerURL().Path,
 	}
 
 	action.SetUUID(fileID)
@@ -290,7 +289,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
-	container, srcObj, err := m.fileIDtoContainerPath(action.UUID())
+	_, srcObj, err := m.fileIDtoContainerPath(action.UUID())
 	if err != nil {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
@@ -306,8 +305,6 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	m.actions[action.PrimaryPath()] = cancel
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
-		AccountName:     m.config.AzStorageAccount,
-		ContainerName:   container,
 		ResourceSAS:     sas,
 		BlobName:        srcObj,
 		Credential:      m.cred,
@@ -347,7 +344,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return errors.New("Missing file_id")
 	}
 
-	container, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
+	_, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
 	if err != nil {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
@@ -359,8 +356,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	err = core.Remove(core.RemoveOptions{
-		AccountName:   m.config.AzStorageAccount,
-		ContainerName: container,
+		ContainerURL:   m.config.ContainerURL(),
 		ResourceSAS:   sas,
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,

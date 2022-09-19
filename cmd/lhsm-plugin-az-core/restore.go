@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -14,8 +13,7 @@ import (
 )
 
 type RestoreOptions struct {
-	AccountName     string
-	ContainerName   string
+	ContainerURL    *url.URL
 	ResourceSAS     string
 	BlobName        string
 	DestinationPath string
@@ -33,13 +31,11 @@ var maxRetryPerDownloadBody = 5
 //Restore persists a blob to the local filesystem
 func Restore(ctx context.Context, o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	blobPath := path.Join(o.ContainerName, o.BlobName)
+	containerURL := azblob.NewContainerURL(*o.ContainerURL, p)
+	blobURL := containerURL.NewBlockBlobURL(o.BlobName)
 
-	u, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, blobPath, o.ResourceSAS))
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", blobURL.String(), o.DestinationPath))
 
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", u.String(), o.DestinationPath))
-
-	blobURL := azblob.NewBlobURL(*u, p)
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return 0, err
