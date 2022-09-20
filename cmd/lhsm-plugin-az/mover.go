@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -30,6 +31,7 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
+	actions             map[string]context.CancelFunc //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
 	getSAS              chan chan string
@@ -56,6 +58,7 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 		},
 		getSAS:             make(chan chan string),
 		forceSASRefresh:    make(chan time.Time),
+		actions:            make(map[string]context.CancelFunc),
 	}
 }
 
@@ -221,7 +224,12 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	total, err := core.Archive(core.ArchiveOptions{
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.actions[action.PrimaryPath()] = cancel
+
+	total, err := core.Archive(ctx, core.ArchiveOptions{
 		AccountName:   m.config.AzStorageAccount,
 		ContainerName: m.config.Container,
 		ResourceSAS:   sas,
@@ -246,6 +254,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+
+	delete(m.actions, action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -290,8 +300,12 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	contentLen, err := core.Restore(core.RestoreOptions{
+	m.actions[action.PrimaryPath()] = cancel
+
+	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		AccountName:     m.config.AzStorageAccount,
 		ContainerName:   container,
 		ResourceSAS:     sas,
@@ -314,6 +328,8 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
+	delete(m.actions, action.PrimaryPath())
+
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
 		srcObj,
@@ -324,7 +340,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 }
 
 // Remove fulfills an HSM Remove request
-func (m *Mover) Remove(action dmplugin.Action) error {
+func (m *Mover) Remove(action dmplugin.Action) error { 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	if action.UUID() == "" {
@@ -361,4 +377,14 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	return nil
+}
+
+
+func (m *Mover) Cancel(action dmplugin.Action) error {
+	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	if cancel, ok := m.actions[action.PrimaryPath()]; ok {
+		cancel()
+		return nil
+	}
+	return errors.New("Could not find action with specified UUID")
 }

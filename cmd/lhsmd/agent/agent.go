@@ -157,13 +157,15 @@ func (ct *HsmAgent) newAction(aih hsm.ActionHandle) *Action {
 func (ct *HsmAgent) handleActions(tag string) {
 	for ai := range ct.actionSource.Actions() {
 		debug.Printf("%s: incoming: %s", tag, ai)
-		// AFAICT, this is how the copytool is expected to handle cancels.
+		var isCancel = false
 		if ai.Action() == llapi.HsmActionCancel {
-			ai.FailImmediately(int(unix.ENOSYS))
-			// TODO: send out of band cancel message to the mover
-			continue
+			// We need to set this up for eventual error.
+			// The actual cancel needs to be processed in the mover, however.
+			isCancel = true
 		}
-		aih, err := ai.Begin(0, false)
+		
+
+		aih, err := ai.Begin(0, isCancel)
 		if err != nil {
 			alert.Warnf("%s: begin failed: %v: %s", tag, err, ai)
 			ai.FailImmediately(int(unix.EIO))

@@ -85,9 +85,9 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 	if fileInfo.IsDir() {
 		meta["hdi_isfolder"] = "true"
-		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, nil, azblob.ClientProvidedKeyOptions{})
-	} else {
-		err = util.Upload(filepath, blobURL.String(), o.BlockSize, meta)	
+		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, nil, azblob.ClientProvidedKeyOptions{}, azblob.ImmutabilityPolicyOptions{})
+	} else {	
+		err = util.Upload(ctx, filepath, blobURL.String(), o.BlockSize, meta)
 	}
 
 	if err != nil {
@@ -112,10 +112,8 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 }
 
 //Archive copies local file to HNS
-func Archive(o ArchiveOptions) (size int64, err error) {
+func Archive(ctx context.Context, o ArchiveOptions) (size int64, err error) {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", o.BlobName))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	wg := sync.WaitGroup{}
 
 	parents := strings.Split(o.BlobName, string(os.PathSeparator))

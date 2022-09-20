@@ -3,11 +3,11 @@ module github.com/wastore/lemur
 go 1.13
 
 require (
-	github.com/Azure/azure-pipeline-go v0.2.3
+	github.com/Azure/azure-pipeline-go v0.2.4-0.20220425205405-09e6f201e1e4
 	github.com/Azure/azure-sdk-for-go v48.2.0+incompatible
 	github.com/Azure/azure-storage-azcopy v10.0.2+incompatible
-	github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220406080352-0e403508749f
-	github.com/Azure/azure-storage-blob-go v0.13.1-0.20210914164749-2d6cd3e07548
+	github.com/Azure/azure-storage-azcopy/v10 v10.13.1-0.20220511103905-68146d852497
+	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.3 // indirect
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.0 // indirect

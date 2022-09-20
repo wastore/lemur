@@ -30,11 +30,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
+	"github.com/Azure/azure-storage-azcopy/v10/azbfs"
 	"github.com/Azure/azure-storage-azcopy/v10/cmd"
 	"github.com/Azure/azure-storage-azcopy/v10/common"
 	"github.com/Azure/azure-storage-azcopy/v10/ste"
@@ -219,6 +221,26 @@ func GetBlockSize(filesize int64, minBlockSize int64) (blockSize int64) {
 	return blockSize
 }
 
+func UnixError(err error) (ret int32) {
+	if err == nil {
+		ret = int32(0)
+	}
+
+	if stgErr, ok := err.(azblob.StorageError); ok {
+		ret =  int32(stgErr.Response().StatusCode)
+	} else if stgErr, ok := err.(azbfs.StorageError); ok {
+		ret =  int32(stgErr.Response().StatusCode)
+	} else if errEx, ok := err.(ErrorEx); ok {
+		ret = errEx.ErrorCode()
+	} else {
+		ret = int32(syscall.EINVAL)
+	}
+
+	Log(pipeline.LogError, fmt.Sprintf("For error %v, returned status %d", err, ret))
+
+	return ret
+}
+
 var jobMgr ste.IJobMgr
 var globalPartNum uint32
 var partNumLock sync.Mutex
@@ -249,7 +271,7 @@ func ResetPartNum() {
 	globalPartNum = 0
 }
 
-func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
+func Upload(ctx context.Context, filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
 	srcResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	dstResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
 	p := common.PartNumber(NextPartNum())
@@ -298,7 +320,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	jppfn.Create(order)
 
 	waitForCompletion := make(chan struct{})
-	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
 
 	// Update jobPart Status with the status Manager
 	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
@@ -307,11 +329,19 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 
-	<-waitForCompletion
-	part, _ := jobMgr.JobPartMgr(p)
-	plan := part.Plan()
+	plan := jpm.Plan()
+
+	canceled := false
+	select {
+	case <- ctx.Done():
+		canceled = true
+		jpm.Cancel()
+		<-waitForCompletion
+	case <-waitForCompletion:
+	}
+	
 	status := plan.JobPartStatus()
-	jpp := part.Plan().Transfer(0)
+	jpp := jpm.Plan().Transfer(0)
 	errCode := jpp.ErrorCode()
 
 	if p != 0 {
@@ -322,6 +352,9 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 		Log(pipeline.LogError, err.Error())
 	}
 
+	if canceled {
+		return ErrorEx{code: int32(syscall.ECANCELED), msg: "Job Cancelled"}
+	}
 	if status != common.EJobStatus.Completed() {
 		return ErrorEx{code: errCode, msg: "STE Failed"}
 	}
@@ -329,7 +362,7 @@ func Upload(filePath string, blobPath string, blockSize int64, meta azblob.Metad
 	return nil
 }
 
-func Download(blobPath string, filePath string, blockSize int64) error {
+func Download(ctx context.Context, blobPath string, filePath string, blockSize int64) error {
 	dstResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	srcResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
 	p := common.PartNumber(NextPartNum())
@@ -389,7 +422,7 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 	jppfn.Create(order)
 
 	waitForCompletion := make(chan struct{})
-	jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
 
 	// Update jobPart Status with the status Manager
 	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
@@ -397,9 +430,18 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
-
-	<-waitForCompletion
+	
 	part, _ := jobMgr.JobPartMgr(p)
+
+	canceled := false		
+	select {
+	case <- ctx.Done():
+		canceled = true
+		jpm.Cancel()
+		<-waitForCompletion
+	case <-waitForCompletion:
+	}
+	
 	plan := part.Plan()
 	status := plan.JobPartStatus()
 	jpp := part.Plan().Transfer(0)
@@ -413,6 +455,9 @@ func Download(blobPath string, filePath string, blockSize int64) error {
 		Log(pipeline.LogError, err.Error())
 	}
 
+	if canceled {
+		return ErrorEx{code: int32(syscall.ECANCELED), msg: "Job Cancelled"}
+	}
 	if status != common.EJobStatus.Completed() {
 		return ErrorEx{code: errCode, msg: "STE Failed"}
 	}

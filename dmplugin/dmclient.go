@@ -115,6 +115,10 @@ type (
 	Remover interface {
 		Remove(Action) error
 	}
+
+	Canceler interface {
+		Cancel(Action) error
+	}
 )
 
 type key int
@@ -190,7 +194,7 @@ func (a *dmAction) fail(err error) error {
 		Id:        a.item.Id,
 		Completed: true,
 
-		Error: getErrno(err),
+		Error: util.UnixError(err),
 	}
 	return nil
 }
@@ -272,6 +276,9 @@ func NewMover(plugin *Plugin, cli pb.DataMoverClient, config *Config) *DataMover
 	}
 	if remover, ok := config.Mover.(Remover); ok {
 		actions[pb.Command_REMOVE] = remover.Remove
+	}
+	if canceler, ok := config.Mover.(Canceler); ok {
+		actions[pb.Command_CANCEL] = canceler.Cancel
 	}
 
 	return &DataMoverClient{
