@@ -155,6 +155,7 @@ func (ct *HsmAgent) newAction(aih hsm.ActionHandle) *Action {
 }
 
 func (ct *HsmAgent) handleActions(tag string) {
+	ct.StartWaitFor(5 * time.Second)
 	for ai := range ct.actionSource.Actions() {
 		debug.Printf("%s: incoming: %s", tag, ai)
 		var isCancel = false
