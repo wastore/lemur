@@ -85,8 +85,7 @@ func run(conf *agent.Config) error {
 		ct.Stop()
 	})
 
-	return errors.Wrap(ct.Start(ctx),
-		"Error in HsmAgent.Start()")
+	return errors.Wrap(ct.Start(ctx), "Error in HsmAgent.Start()")
 }
 
 func main() {

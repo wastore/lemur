@@ -329,8 +329,6 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 
-	plan := jpm.Plan()
-
 	canceled := false
 	select {
 	case <- ctx.Done():
@@ -339,9 +337,12 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		<-waitForCompletion
 	case <-waitForCompletion:
 	}
+
 	
+	part, _ := jobMgr.JobPartMgr(p)
+	plan := part.Plan()
 	status := plan.JobPartStatus()
-	jpp := jpm.Plan().Transfer(0)
+	jpp := part.Plan().Transfer(0)
 	errCode := jpp.ErrorCode()
 
 	if p != 0 {

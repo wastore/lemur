@@ -10,16 +10,17 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
 
 	"golang.org/x/net/context"
 
-	"github.com/wastore/lemur/cmd/lhsmd/config"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
+	"github.com/wastore/lemur/cmd/lhsmd/config"
 )
 
 var backoff = []time.Duration{
@@ -146,6 +147,8 @@ func (m *PluginMonitor) run(ctx context.Context) {
 
 			delete(processMap, s.ps.Pid())
 			audit.Logf("Process %d for %s died: %s", s.ps.Pid(), cfg.Name, s.ps)
+			syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+			/*
 			if cfg.RestartOnFailure {
 				delay := cfg.RestartDelay()
 				audit.Logf("Restarting plugin %s after delay of %s (attempt %d)", cfg.Name, delay, cfg.restartCount)
@@ -163,6 +166,7 @@ func (m *PluginMonitor) run(ctx context.Context) {
 					}
 				}(cfg, delay)
 			}
+			*/
 		case <-ctx.Done():
 			return
 		}
