@@ -345,7 +345,7 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 	errCode := jpp.ErrorCode()
 
 	if p != 0 {
-		part.Close()
+		jpm.Close()
 	}
 
 	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
