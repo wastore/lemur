@@ -67,7 +67,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 
 	blobName := containerName + "/" + fileName
 	// invoke restore to download the file back
-	count, err = Restore(RestoreOptions{
+	count, err = Restore(context.Background(), RestoreOptions{
 		ContainerURL:  &cURL,
 		BlobName:        blobName,
 		DestinationPath: destFilePath,
