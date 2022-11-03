@@ -50,10 +50,10 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
 	blobName = containerName + "/" + blobName
+	cURL := containerURL.URL()
 	count, err := Restore(context.TODO(),
-			RestoreOptions{
-		AccountName:     account,
-		ContainerName:   "",
+	RestoreOptions{
+		ContainerURL: &cURL,
 		BlobName:        blobName,
 		DestinationPath: destination,
 		Credential:      credential,
