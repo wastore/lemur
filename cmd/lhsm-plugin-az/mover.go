@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
@@ -25,13 +26,37 @@ import (
 	"github.com/wastore/lemur/dmplugin"
 )
 
+type cancelMap struct {
+	m map[string]context.CancelFunc
+	l sync.Mutex
+}
+
+func (c *cancelMap) add(key string, v context.CancelFunc) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	c.m[key] = v
+}
+
+func (c *cancelMap) delete(key string) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	delete(c.m, key)
+}
+
+func (c *cancelMap) cancelFunc(key string) (context.CancelFunc, bool) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	f, ok := c.m[key]
+	return f, ok
+}
+
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
 	name                string
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	actions             map[string]context.CancelFunc //Actions in progress
+	actions             cancelMap //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
 	getSAS              chan chan string
@@ -58,7 +83,7 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 		},
 		getSAS:             make(chan chan string),
 		forceSASRefresh:    make(chan time.Time),
-		actions:            make(map[string]context.CancelFunc),
+		actions:            cancelMap{m: make(map[string]context.CancelFunc)},
 	}
 }
 
@@ -227,7 +252,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.actions[action.PrimaryPath()] = cancel
+	m.actions.add(action.PrimaryPath(),cancel)
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
 		ContainerURL:  m.config.ContainerURL(),
@@ -254,7 +279,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	delete(m.actions, action.PrimaryPath())
+	m.actions.delete(action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -302,7 +327,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.actions[action.PrimaryPath()] = cancel
+	m.actions.add(action.PrimaryPath(), cancel)
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		ResourceSAS:     sas,
@@ -325,7 +350,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
-	delete(m.actions, action.PrimaryPath())
+	m.actions.delete(action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -378,7 +403,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 
 func (m *Mover) Cancel(action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	if cancel, ok := m.actions[action.PrimaryPath()]; ok {
+	if cancel, ok := m.actions.cancelFunc(action.PrimaryPath()); ok {
 		cancel()
 		return nil
 	}
