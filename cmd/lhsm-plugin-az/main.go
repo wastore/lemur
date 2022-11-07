@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path"
 	rdbg "runtime/debug"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,9 +36,7 @@ type (
 		Name                  string `hcl:",key"`
 		ID                    int
 		AzStorageAccountURL   string `hcl:"az_storage_account_url"`
-		HNSOverride           string `hcl:"hns_enabled"`
-		HNSEnabled            bool 
-		AzStorageKVURL        string `hcl:"az_kv_URL"`
+		AzStorageKVURL        string `hcl:"az_kv_url"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string `json:"-"`
 		SASContext            time.Time  `json:"-"` //Context is used by operations to know if they've latest SAS
@@ -157,24 +154,6 @@ func (a *archiveConfig) setContainerURL() (error) {
 	u.Path = path.Join(u.Path, a.Container)
 	u.RawQuery = a.AzStorageSAS
 	a.containerURL = u
-
-	return nil
-}
-
-func (a *archiveConfig) setAccountType() (err error) {
-	if val, err := strconv.ParseBool(a.HNSOverride); a.HNSOverride != "" && err == nil {
-		a.HNSEnabled = val
-		return nil
-	}
-
-	containerURL := azblob.NewContainerURL(*a.containerURL, azblob.NewPipeline(a.azCreds,azblob.PipelineOptions{}))
-	ctx, _ := context.WithTimeout(context.Background(), time.Minute * 3)
-	resp, err := containerURL.GetAccountInfo(ctx)
-	if err != nil {
-		return err
-	}
-
-	a.HNSEnabled = resp.Response().Header.Get("X-Ms-Is-Hns-Enabled") == "true"
 
 	return nil
 }
@@ -441,9 +420,6 @@ func main() {
 		}
 		if err = ac.setContainerURL(); err != nil {
 			alert.Abort(errors.Wrap(err, "Failed to parse Account URL"))
-		}
-		if err = ac.setAccountType(); err != nil {
-			alert.Abort(errors.Wrap(err, "Failed to set account type"))
 		}
 	}
 

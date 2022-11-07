@@ -265,7 +265,6 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		BlockSize:     m.config.UploadPartSize,
 		Pacer:         pacer,
 		ExportPrefix:  m.config.ExportPrefix,
-		HNSEnabled:    m.config.HNSEnabled,
 		HTTPClient:    m.httpClient,
 		OpStartTime:   opStartTime,
 	})
