@@ -33,8 +33,9 @@ func Restore(ctx context.Context, o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	containerURL := azblob.NewContainerURL(*o.ContainerURL, p)
 	blobURL := containerURL.NewBlockBlobURL(o.BlobName)
+	values, _ := url.ParseQuery(blobURL.URL().RawQuery)
 
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", blobURL.String(), o.DestinationPath))
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s nak %s to %s.", blobURL.String(), values["sig"], o.DestinationPath))
 
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {

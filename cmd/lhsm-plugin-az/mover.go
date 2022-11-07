@@ -248,6 +248,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+	cURL, err := url.Parse(fmt.Sprintf(m.config.ContainerURL() + sas))
+	if err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -255,7 +259,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	m.actions.add(action.PrimaryPath(),cancel)
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
-		ContainerURL:  m.config.ContainerURL(),
+		ContainerURL:  cURL,
 		ResourceSAS:   sas,
 		MountRoot:     m.config.MountRoot,
 		BlobName:      fileKey,
@@ -288,8 +292,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	u := url.URL{
 		Scheme: "az",
-		Host:   m.config.ContainerURL().Host,
-		Path:   m.config.ContainerURL().Path,
+		Host:   cURL.Host,
+		Path:   cURL.Path,
 	}
 
 	action.SetUUID(fileID)
@@ -324,12 +328,18 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+	cURL, err := url.Parse(fmt.Sprintf(m.config.ContainerURL() + sas))
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	m.actions.add(action.PrimaryPath(), cancel)
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
+		ContainerURL:    cURL,
 		ResourceSAS:     sas,
 		BlobName:        srcObj,
 		Credential:      m.cred,
@@ -379,9 +389,13 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
+	cURL, err := url.Parse(fmt.Sprintf(m.config.ContainerURL() + sas))
+	if err != nil {
+		return err
+	}
 
 	err = core.Remove(core.RemoveOptions{
-		ContainerURL:   m.config.ContainerURL(),
+		ContainerURL:   cURL,
 		ResourceSAS:   sas,
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,

@@ -55,7 +55,7 @@ type (
 		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
 		azCreds               azblob.Credential
 		jobMgr                ste.IJobMgr `json:"-"`
-		containerURL          *url.URL /* Container Blob Endpoint URL */
+		containerURL          string /* Container Blob Endpoint URL */
 	}
 
 	archiveSet []*archiveConfig
@@ -95,7 +95,7 @@ func (a *archiveConfig) String() string {
 	return fmt.Sprintf("%d:%s:%s:%s/%s", a.ID, a.Endpoint, a.Region, a.Container, a.Prefix)
 }
 
-func (a *archiveConfig) ContainerURL() *url.URL {
+func (a *archiveConfig) ContainerURL() string {
 	return a.containerURL
 }
 
@@ -155,8 +155,7 @@ func (a *archiveConfig) setContainerURL() (error) {
 		return err
 	}
 	u.Path = path.Join(u.Path, a.Container)
-	u.RawQuery = a.AzStorageSAS
-	a.containerURL = u
+	a.containerURL = u.String()
 
 	return nil
 }
@@ -167,7 +166,11 @@ func (a *archiveConfig) setAccountType() (err error) {
 		return nil
 	}
 
-	containerURL := azblob.NewContainerURL(*a.containerURL, azblob.NewPipeline(a.azCreds,azblob.PipelineOptions{}))
+	cURL, err := url.Parse(fmt.Sprintf(a.containerURL + a.AzStorageSAS))
+	if err != nil {
+		return err
+	}
+	containerURL := azblob.NewContainerURL(*cURL, azblob.NewPipeline(a.azCreds,azblob.PipelineOptions{}))
 	ctx, _ := context.WithTimeout(context.Background(), time.Minute * 3)
 	resp, err := containerURL.GetAccountInfo(ctx)
 	if err != nil {

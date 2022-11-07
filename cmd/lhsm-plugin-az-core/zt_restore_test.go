@@ -49,18 +49,29 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
-	blobName = containerName + "/" + blobName
+	sasQueryParams, err := azblob.BlobSASSignatureValues {
+		Version:       "2019-12-12",
+		Protocol:      azblob.SASProtocolHTTPS,
+		StartTime:     time.Now(),
+		ExpiryTime:    time.Now().UTC().Add(time.Hour),
+		ContainerName: containerName,
+		Permissions: azblob.BlobSASPermissions{Add: true, Read: true, Write: true}.String(),
+	}.NewSASQueryParameters(credential)
+	c.Assert(err, chk.IsNil)
+	qp := sasQueryParams.Encode()
+
 	cURL := containerURL.URL()
+	cURL.RawQuery = qp
 	count, err := Restore(context.TODO(),
 	RestoreOptions{
-		ContainerURL: &cURL,
+		ContainerURL:    &cURL,
 		BlobName:        blobName,
 		DestinationPath: destination,
 		Credential:      credential,
 		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
-		HTTPClient: &http.Client{},
-		OpStartTime: time.Now(),
+		HTTPClient:      &http.Client{},
+		OpStartTime:     time.Now(),
 	})
 
 	// make sure we got the right info back
