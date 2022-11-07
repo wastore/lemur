@@ -36,10 +36,10 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
-		AzStorageAccount      string `hcl:"az_storage_account"`
+		AzStorageAccountURL   string `hcl:"az_storage_account_url"`
 		HNSOverride           string `hcl:"hns_enabled"`
 		HNSEnabled            bool 
-		AzStorageKVName       string `hcl:"az_kv_name"`
+		AzStorageKVURL        string `hcl:"az_kv_URL"`
 		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
 		AzStorageSAS          string `json:"-"`
 		SASContext            time.Time  `json:"-"` //Context is used by operations to know if they've latest SAS
@@ -55,14 +55,15 @@ type (
 		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
 		azCreds               azblob.Credential
 		jobMgr                ste.IJobMgr `json:"-"`
+		containerURL          *url.URL /* Container Blob Endpoint URL */
 	}
 
 	archiveSet []*archiveConfig
 
 	azConfig struct {
 		NumThreads            int        `hcl:"num_threads"`
-		AzStorageAccount      string     `hcl:"az_storage_account"`
-		AzStorageKVName       string     `hcl:"az_kv_name"`
+		AzStorageAccountURL   string     `hcl:"az_storage_account_url"`
+		AzStorageKVURL        string     `hcl:"az_kv_url"`
 		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
 		Endpoint              string     `hcl:"endpoint"`
 		Region                string     `hcl:"region"`
@@ -94,13 +95,27 @@ func (a *archiveConfig) String() string {
 	return fmt.Sprintf("%d:%s:%s:%s/%s", a.ID, a.Endpoint, a.Region, a.Container, a.Prefix)
 }
 
+func (a *archiveConfig) ContainerURL() *url.URL {
+	return a.containerURL
+}
+
+
 func (a *archiveConfig) checkValid() error {
 	var errors []string
 
+	if _, err := url.Parse(a.AzStorageAccountURL); err != nil {
+		errors = append(errors, "Archive %s: Invalid URL set for StorageAccount.", a.AzStorageAccountURL)
+	}
 	if a.Container == "" {
 		errors = append(errors, fmt.Sprintf("Archive %s: Container not set", a.Name))
 	}
 
+	if a.AzStorageKVURL == "" || a.AzStorageKVSecretName == "" {
+		errors = append(errors, fmt.Sprintf("Archive %s: Keyvault URL and secret name should not be empty."))
+	}
+	if _, err := url.Parse(a.AzStorageKVURL); err != nil {
+		errors = append(errors, fmt.Sprintf("Archive %s: Invalid URL specified for Keyvault"))
+	}
 	if a.ID < 1 {
 		errors = append(errors, fmt.Sprintf("Archive %s: archive id not set", a.Name))
 
@@ -120,11 +135,8 @@ func (a *archiveConfig) checkValid() error {
 
 func (a *archiveConfig) checkAzAccess() (err error) {
 	const sigAzure string = "sig="
-	if a.AzStorageKVName == "" || a.AzStorageKVSecretName == "" {
-		return errors.New("No Az credentials found; cannot initialize data mover")
-	}
 
-	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVName, a.AzStorageKVSecretName)
+	a.AzStorageSAS, err = util.GetKVSecret(a.AzStorageKVURL, a.AzStorageKVSecretName)
 
 	if err != nil {
 		return errors.Wrap(err, "Could not get secret. Check KV credentials.")
@@ -137,15 +149,27 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 	return nil
 }
 
+func (a *archiveConfig) setContainerURL() (error) {
+	u, err := url.Parse(a.AzStorageAccountURL)
+	if (err != nil) {
+		return err
+	}
+	u.Path = path.Join(u.Path, a.Container)
+	u.RawQuery = a.AzStorageSAS
+	a.containerURL = u
+
+	return nil
+}
+
 func (a *archiveConfig) setAccountType() (err error) {
 	if val, err := strconv.ParseBool(a.HNSOverride); a.HNSOverride != "" && err == nil {
 		a.HNSEnabled = val
 		return nil
 	}
-	cURL, _ := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s%s", a.AzStorageAccount, a.Container, a.AzStorageSAS))
-	containerURL := azblob.NewContainerURL(*cURL, azblob.NewPipeline(a.azCreds,azblob.PipelineOptions{}))
 
-	resp, err := containerURL.GetAccountInfo(context.Background())
+	containerURL := azblob.NewContainerURL(*a.containerURL, azblob.NewPipeline(a.azCreds,azblob.PipelineOptions{}))
+	ctx, _ := context.WithTimeout(context.Background(), time.Minute * 3)
+	resp, err := containerURL.GetAccountInfo(ctx)
 	if err != nil {
 		return err
 	}
@@ -158,12 +182,12 @@ func (a *archiveConfig) setAccountType() (err error) {
 // this does an in-place merge, replacing any unset archive-level value
 // with the global value for that setting
 func (a *archiveConfig) mergeGlobals(g *azConfig) {
-	if a.AzStorageAccount == "" {
-		a.AzStorageAccount = g.AzStorageAccount
+	if a.AzStorageAccountURL == "" {
+		a.AzStorageAccountURL = g.AzStorageAccountURL
 	}
 
-	if a.AzStorageKVName == "" {
-		a.AzStorageKVName = g.AzStorageKVName
+	if a.AzStorageKVURL == "" {
+		a.AzStorageKVURL = g.AzStorageKVURL
 	}
 
 	if a.AzStorageKVSecretName == "" {
@@ -222,14 +246,14 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.Endpoint = other.Endpoint
 	}
 
-	result.AzStorageAccount = c.AzStorageAccount
-	if other.AzStorageAccount != "" {
-		result.AzStorageAccount = other.AzStorageAccount
+	result.AzStorageAccountURL = c.AzStorageAccountURL
+	if other.AzStorageAccountURL != "" {
+		result.AzStorageAccountURL = other.AzStorageAccountURL
 	}
 
-	result.AzStorageKVName = c.AzStorageKVName
-	if other.AzStorageKVName != "" {
-		result.AzStorageKVName = other.AzStorageKVName
+	result.AzStorageKVURL = c.AzStorageKVURL
+	if other.AzStorageKVURL != "" {
+		result.AzStorageKVURL = other.AzStorageKVURL
 	}
 
 	result.AzStorageKVSecretName = c.AzStorageKVSecretName
@@ -414,6 +438,9 @@ func main() {
 		}
 		if err = ac.checkAzAccess(); err != nil {
 			alert.Abort(errors.Wrap(err, "Az access check failed"))
+		}
+		if err = ac.setContainerURL(); err != nil {
+			alert.Abort(errors.Wrap(err, "Failed to parse Account URL"))
 		}
 		if err = ac.setAccountType(); err != nil {
 			alert.Abort(errors.Wrap(err, "Failed to set account type"))

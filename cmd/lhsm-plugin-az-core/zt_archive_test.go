@@ -43,16 +43,16 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
+	cURL := containerURL.URL()
 	count, err := Archive(context.Background(), ArchiveOptions{
-		AccountName:   account,
-		ContainerName: containerName,
+		ContainerURL:  &cURL,
 		BlobName:      fileName,
 		SourcePath:    filePath,
 		Credential:    credential,
 		Parallelism:   uint16(parallelism),
 		BlockSize:     int64(blockSize),
 		MountRoot:     os.TempDir(),
-		HTTPClient: &http.Client{},
+		HTTPClient:    &http.Client{},
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -67,9 +67,8 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 
 	blobName := containerName + "/" + fileName
 	// invoke restore to download the file back
-	count, err = Restore(RestoreOptions{
-		AccountName:     account,
-		ContainerName:   "",
+	count, err = Restore(context.Background(), RestoreOptions{
+		ContainerURL:  &cURL,
 		BlobName:        blobName,
 		DestinationPath: destFilePath,
 		Credential:      credential,
@@ -119,7 +118,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 
 	// Set up test container
 	bsu := getBSU()
-	containerURL, containerName := createNewContainer(c, bsu)
+	containerURL, _ := createNewContainer(c, bsu)
 	defer deleteContainer(c, containerURL)
 
 	//setup logging
@@ -129,9 +128,9 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	account, key := getAccountAndKey()
 	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
+	cURL := containerURL.URL()
 	count, err := Archive(context.Background(), ArchiveOptions{
-		AccountName:   account,
-		ContainerName: containerName,
+		ContainerURL:  &cURL,
 		BlobName:      fileName,
 		SourcePath:    filePath,
 		Credential:    credential,

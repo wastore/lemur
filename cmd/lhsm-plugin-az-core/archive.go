@@ -19,8 +19,7 @@ import (
 )
 
 type ArchiveOptions struct {
-	AccountName   string
-	ContainerName string
+	ContainerURL  *url.URL
 	ResourceSAS   string
 	MountRoot     string
 	BlobName      string
@@ -35,8 +34,11 @@ type ArchiveOptions struct {
 	OpStartTime   time.Time
 }
 
-const blobEndPoint string = "https://%s.blob.core.windows.net/"
-const dfsEndPoint string = "https://%s.dfs.core.windows.net/"
+func blobURLToDFSURL(u url.URL) url.URL {
+	u.Host = strings.Replace(u.Host, ".blob", ".dfs", 1)
+	return u
+}
+
 const parallelDirCount = 64 // Number parallel dir metadata uploads
 
 func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, err error) {
@@ -44,8 +46,7 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	blobPath = path.Join(o.ExportPrefix, blobPath)
 
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	cURL, _ := url.Parse(fmt.Sprintf(blobEndPoint+"%s%s", o.AccountName, o.ContainerName, o.ResourceSAS))
-	containerURL := azblob.NewContainerURL(*cURL, p)
+	containerURL := azblob.NewContainerURL(*o.ContainerURL, p)
 	blobURL := containerURL.NewBlockBlobURL(blobPath)
 	meta := azblob.Metadata{}
 

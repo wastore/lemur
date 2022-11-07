@@ -135,7 +135,7 @@ func NewPipeline(ctx context.Context, c azblob.Credential, p Pacer, o azblob.Pip
 
 //GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
 //Uses MSI auth to login
-func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
+func GetKVSecret(kvURL, kvSecretName string) (secret string, err error) {
 	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
 	if err != nil {
 		return "", err
@@ -145,12 +145,17 @@ func GetKVSecret(kvName, kvSecretName string) (secret string, err error) {
 	basicClient.Authorizer = authorizer
 
 	ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
-	secretResp, err := basicClient.GetSecret(ctx, "https://"+kvName+".vault.azure.net", kvSecretName, "")
+	secretResp, err := basicClient.GetSecret(ctx, kvURL, kvSecretName, "")
 	if err != nil {
 		return "", err
 	}
 
-	return *secretResp.Value, nil
+	secret = *secretResp.Value
+	if secret[0] == '?' {
+		secret = secret[1:]
+	}
+
+	return secret, nil
 }
 
 func IsSASValid(sas string) (ok bool, reason string) {
@@ -158,10 +163,6 @@ func IsSASValid(sas string) (ok bool, reason string) {
 		return false, "Empty string returned."
 	}
 
-	if sas[0] == '?' {
-		sas = sas[1:]
-	}
-	
 	q, _ := url.ParseQuery(sas)
 	if q.Get("sig") == "" {
 		return false,"Missing signature"

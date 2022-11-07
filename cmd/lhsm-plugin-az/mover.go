@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
@@ -25,13 +26,37 @@ import (
 	"github.com/wastore/lemur/dmplugin"
 )
 
+type cancelMap struct {
+	m map[string]context.CancelFunc
+	l sync.Mutex
+}
+
+func (c *cancelMap) add(key string, v context.CancelFunc) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	c.m[key] = v
+}
+
+func (c *cancelMap) delete(key string) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	delete(c.m, key)
+}
+
+func (c *cancelMap) cancelFunc(key string) (context.CancelFunc, bool) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	f, ok := c.m[key]
+	return f, ok
+}
+
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
 	name                string
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	actions             map[string]context.CancelFunc //Actions in progress
+	actions             cancelMap //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
 	getSAS              chan chan string
@@ -58,7 +83,7 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 		},
 		getSAS:             make(chan chan string),
 		forceSASRefresh:    make(chan time.Time),
-		actions:            make(map[string]context.CancelFunc),
+		actions:            cancelMap{m: make(map[string]context.CancelFunc)},
 	}
 }
 
@@ -149,7 +174,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 		}
 
 		for { //loop till we've a valid SAS
-			sas, err := util.GetKVSecret(m.config.AzStorageKVName, m.config.AzStorageKVSecretName)
+			sas, err := util.GetKVSecret(m.config.AzStorageKVURL, m.config.AzStorageKVSecretName)
 			if err == nil {
 				if ok, reason := util.IsSASValid(sas); !ok {
 					err = errors.New("Invalid SAS returned. " + reason)
@@ -227,11 +252,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.actions[action.PrimaryPath()] = cancel
+	m.actions.add(action.PrimaryPath(),cancel)
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
-		AccountName:   m.config.AzStorageAccount,
-		ContainerName: m.config.Container,
+		ContainerURL:  m.config.ContainerURL(),
 		ResourceSAS:   sas,
 		MountRoot:     m.config.MountRoot,
 		BlobName:      fileKey,
@@ -255,7 +279,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	delete(m.actions, action.PrimaryPath())
+	m.actions.delete(action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -264,8 +288,8 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 	u := url.URL{
 		Scheme: "az",
-		Host:   fmt.Sprintf("%s.blob.core.windows.net/%s", m.config.AzStorageAccount, m.config.Container),
-		Path:   fileKey,
+		Host:   m.config.ContainerURL().Host,
+		Path:   m.config.ContainerURL().Path,
 	}
 
 	action.SetUUID(fileID)
@@ -290,7 +314,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
-	container, srcObj, err := m.fileIDtoContainerPath(action.UUID())
+	_, srcObj, err := m.fileIDtoContainerPath(action.UUID())
 	if err != nil {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
@@ -303,11 +327,9 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.actions[action.PrimaryPath()] = cancel
+	m.actions.add(action.PrimaryPath(), cancel)
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
-		AccountName:     m.config.AzStorageAccount,
-		ContainerName:   container,
 		ResourceSAS:     sas,
 		BlobName:        srcObj,
 		Credential:      m.cred,
@@ -328,7 +350,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
-	delete(m.actions, action.PrimaryPath())
+	m.actions.delete(action.PrimaryPath())
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -347,7 +369,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return errors.New("Missing file_id")
 	}
 
-	container, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
+	_, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
 	if err != nil {
 		return errors.Wrap(err, "fileIDtoContainerPath failed")
 	}
@@ -359,8 +381,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	err = core.Remove(core.RemoveOptions{
-		AccountName:   m.config.AzStorageAccount,
-		ContainerName: container,
+		ContainerURL:   m.config.ContainerURL(),
 		ResourceSAS:   sas,
 		BlobName:      srcObj,
 		ExportPrefix:  m.config.ExportPrefix,
@@ -382,7 +403,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 
 func (m *Mover) Cancel(action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	if cancel, ok := m.actions[action.PrimaryPath()]; ok {
+	if cancel, ok := m.actions.cancelFunc(action.PrimaryPath()); ok {
 		cancel()
 		return nil
 	}
