@@ -329,6 +329,7 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
+	part, _ := jobMgr.JobPartMgr(p)
 
 	canceled := false
 	select {
@@ -339,8 +340,6 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 	case <-waitForCompletion:
 	}
 
-	
-	part, _ := jobMgr.JobPartMgr(p)
 	plan := part.Plan()
 	status := plan.JobPartStatus()
 	jpp := part.Plan().Transfer(0)
