@@ -102,10 +102,6 @@ func (ct *HsmAgent) Start(ctx context.Context) error {
 		return errors.Wrap(err, "initializing HSM agent connection")
 	}
 
-	for i := 0; i < ct.config.Processes; i++ {
-		ct.addHandler(fmt.Sprintf("handler-%d", i))
-	}
-
 	ct.monitor.Start(ctx)
 	for _, pluginConf := range ct.config.Plugins() {
 		err := ct.monitor.StartPlugin(pluginConf)
@@ -113,6 +109,14 @@ func (ct *HsmAgent) Start(ctx context.Context) error {
 			return errors.Wrapf(err, "creating plugin %q", pluginConf.Name)
 		}
 	}
+
+	// wait for agent endpoints to be registered.
+	ct.waitForAgentEndpoints(5)
+	for i := 0; i < ct.config.Processes; i++ {
+		ct.addHandler(fmt.Sprintf("agent-handler-%d", i))
+		debug.Printf("Added agent handler: %s", fmt.Sprintf("agent-handler-%d", i))
+	}
+
 	close(ct.startComplete)
 	ct.wg.Wait()
 	close(ct.stopComplete)
@@ -138,6 +142,24 @@ func (ct *HsmAgent) StartWaitFor(n time.Duration) error {
 		return errors.Errorf("Agent startup timed out after %v", n)
 	}
 
+}
+
+// waitForAgentEndpoints will wait for agent endpoints
+// to be registred with time out of n seconds.
+func (ct *HsmAgent) waitForAgentEndpoints(n int) error {
+	registered := false
+	for i := 1; i <= n; i++ {
+		if ct.Endpoints.Registered() {
+			registered = true
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if !registered {
+		return errors.Errorf("Timeout after %vs waiting for agent endpoints to be registered", n)
+
+	}
+	return nil
 }
 
 // Root returns a fs.RootDir representing the Lustre filesystem root
@@ -183,7 +205,7 @@ func (ct *HsmAgent) handleActions(tag string) {
 				action.aih.Fid())
 			e.Send(action)
 		} else {
-			alert.Warnf("no handler for archive %d", aih.ArchiveID())
+			alert.Warnf("Could not add handler %s because the agent endpoint for archive %d was not found.", tag, aih.ArchiveID())
 			action.Fail(-1)
 			ct.stats.CompleteAction(action, -1)
 		}
