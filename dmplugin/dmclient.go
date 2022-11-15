@@ -311,7 +311,7 @@ func (dm *DataMoverClient) Run(ctx context.Context) {
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(i int) {
-			dm.handler(fmt.Sprintf("dm-handler-%d", i), actions)
+			dm.handler(fmt.Sprintf("handler-%d", i), actions)
 			wg.Done()
 		}(i)
 	}

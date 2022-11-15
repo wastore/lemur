@@ -129,18 +129,3 @@ func (all *Endpoints) Remove(h *Handle) Endpoint {
 
 	return nil
 }
-
-// Registered returns true if there is at least one endpoint registered
-func (all *Endpoints) Registered() bool {
-	all.Lock()
-	defer all.Unlock()
-	return !all.empty()
-}
-
-func (all *Endpoints) empty() bool {
-	// all must already be locked.
-	if len(all.endpoints) != 0 {
-		return false
-	}
-	return true
-}
