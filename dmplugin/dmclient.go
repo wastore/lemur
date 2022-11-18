@@ -194,7 +194,7 @@ func (a *dmAction) fail(err error) error {
 		Id:        a.item.Id,
 		Completed: true,
 
-		Error: util.UnixError(err),
+		Error: getErrno(err),
 	}
 	return nil
 }
