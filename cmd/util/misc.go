@@ -41,6 +41,7 @@ import (
 	"github.com/Azure/azure-storage-azcopy/v10/common"
 	"github.com/Azure/azure-storage-azcopy/v10/ste"
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"golang.org/x/sys/unix"
 )
 
 
@@ -237,8 +238,15 @@ func UnixError(err error) (ret int32) {
 		ret = int32(syscall.EINVAL)
 	}
 
-	Log(pipeline.LogError, fmt.Sprintf("For error %v, returned status %d", err, ret))
-
+    // Return 1 (EPERM 1 Operation not permitted) for all non-standard UNIX ERRNOs
+	errno_name := unix.ErrnoName(syscall.Errno(ret))
+	msg := fmt.Sprintf("For error %v, returned status %d", err, ret)
+	if errno_name == "" {
+		val := ret
+		ret = 1
+		msg = fmt.Sprintf("No standard Unix errno for '%v', status: %d. Will return status %d", err, val, ret)
+	}
+	Log(pipeline.LogError, msg)
 	return ret
 }
 
