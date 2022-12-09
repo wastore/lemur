@@ -203,9 +203,9 @@ func (c *Config) Merge(other *Config) *Config {
 		}
 		result.ClientMountOptions = append(result.ClientMountOptions, otherOption)
 	}
-
+	// Default is runtime.NumCPU (c.Processes) - when 0 is specified in the config file
 	result.Processes = c.Processes
-	if other.Processes > result.Processes {
+	if other.Processes != 0 {
 		result.Processes = other.Processes
 	}
 
