@@ -254,6 +254,30 @@ func SetJobMgr(jm ste.IJobMgr) {
 	jobMgr = jm
 }
 
+
+func addJobOrder(order *common.CopyJobPartOrderRequest) (ste.IJobPartMgr, uint32, chan struct{}) {
+	partNumLock.Lock()
+	defer partNumLock.Unlock()
+
+	if globalPartNum == math.MaxUint32 {
+		jobMgr.Reset(context.Background(), "Lustre PartNum Reset")
+		globalPartNum = 0
+	}
+
+	p := globalPartNum
+	globalPartNum += 1 // Next part Num
+
+	order.PartNum = common.PartNumber(p)
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, JobMgr().JobID().String(), p, ste.DataSchemaVersion))
+	jppfn.Create(*order)
+
+	completionChannel := make(chan struct{})
+	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, completionChannel)
+
+	return jpm, p, completionChannel
+}
+
+
 func NextPartNum() uint32 {
 	partNumLock.Lock()
 	defer partNumLock.Unlock()
@@ -275,7 +299,6 @@ func ResetPartNum() {
 func Upload(ctx context.Context, filePath string, blobPath string, blockSize int64, meta azblob.Metadata) error {
 	srcResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	dstResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
-	p := common.PartNumber(NextPartNum())
 
 	fi, _ := os.Stat(filePath)
 
@@ -298,7 +321,6 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 
 	order := common.CopyJobPartOrderRequest{
 		JobID:           JobMgr().JobID(),
-		PartNum:         p,
 		FromTo:          common.EFromTo.LocalBlob(),
 		ForceWrite:      common.EOverwriteOption.True(),
 		ForceIfReadOnly: false,
@@ -317,11 +339,7 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
-	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
-	jppfn.Create(order)
-
-	waitForCompletion := make(chan struct{})
-	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+	jpm, p, waitForCompletion := addJobOrder(&order)
 
 	// Update jobPart Status with the status Manager
 	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
@@ -340,19 +358,28 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 	}
 
 	
-	part, _ := jobMgr.JobPartMgr(p)
+	part, _ := jobMgr.JobPartMgr(common.PartNumber(p))
 	plan := part.Plan()
 	status := plan.JobPartStatus()
 	jpp := part.Plan().Transfer(0)
 	errCode := jpp.ErrorCode()
 
 	if p != 0 {
-		jpm.Close()
+		defer jpm.Close()
 	}
 
-	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
-		Log(pipeline.LogError, err.Error())
-	}
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, JobMgr().JobID().String(), p, ste.DataSchemaVersion))
+	defer func() {
+		if (p == 0) { // Do not remove 0th Part, it is used for book keeping
+			return
+		}
+
+		err := os.Remove(jppfn.GetJobPartPlanPath()); 
+		
+		if err != nil {
+			Log(pipeline.LogError, err.Error())
+		}
+	} ()
 
 	if canceled {
 		return ErrorEx{code: int32(syscall.ECANCELED), msg: "Job Cancelled"}
@@ -367,7 +394,6 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 func Download(ctx context.Context, blobPath string, filePath string, blockSize int64) error {
 	dstResource, _ := cmd.SplitResourceString(filePath, common.ELocation.Local())
 	srcResource, _ := cmd.SplitResourceString(blobPath, common.ELocation.Blob())
-	p := common.PartNumber(NextPartNum())
 
 	getBlobProperties := func(blobPath string) (*azblob.BlobGetPropertiesResponse, error) {
 		rawURL, _ := url.Parse(blobPath)
@@ -402,7 +428,6 @@ func Download(ctx context.Context, blobPath string, filePath string, blockSize i
 
 	order := common.CopyJobPartOrderRequest{
 		JobID:           JobMgr().JobID(),
-		PartNum:         p,
 		FromTo:          common.EFromTo.BlobLocal(),
 		ForceWrite:      common.EOverwriteOption.True(),
 		ForceIfReadOnly: false,
@@ -420,11 +445,7 @@ func Download(ctx context.Context, blobPath string, filePath string, blockSize i
 	}
 	order.Transfers.List = append(order.Transfers.List, t)
 
-	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, jobMgr.JobID().String(), p, ste.DataSchemaVersion))
-	jppfn.Create(order)
-
-	waitForCompletion := make(chan struct{})
-	jpm := jobMgr.AddJobPart(order.PartNum, jppfn, nil, order.SourceRoot.SAS, order.DestinationRoot.SAS, true, waitForCompletion)
+	jpm, p, waitForCompletion := addJobOrder(&order)
 
 	// Update jobPart Status with the status Manager
 	jobMgr.SendJobPartCreatedMsg(ste.JobPartCreatedMsg{TotalTransfers: uint32(len(order.Transfers.List)),
@@ -433,7 +454,7 @@ func Download(ctx context.Context, blobPath string, filePath string, blockSize i
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 	
-	part, _ := jobMgr.JobPartMgr(p)
+	part, _ := jobMgr.JobPartMgr(common.PartNumber(p))
 
 	canceled := false		
 	select {
@@ -450,12 +471,21 @@ func Download(ctx context.Context, blobPath string, filePath string, blockSize i
 	errCode := jpp.ErrorCode()
 
 	if p != 0 {
-		part.Close()
+		defer part.Close()
 	}
 
-	if err := os.Remove(jppfn.GetJobPartPlanPath()); err != nil && p != 0 {
-		Log(pipeline.LogError, err.Error())
-	}
+	jppfn := ste.JobPartPlanFileName(fmt.Sprintf(ste.JobPartPlanFileNameFormat, JobMgr().JobID().String(), p, ste.DataSchemaVersion))
+	defer func() {
+		if (p == 0) { // Do not remove 0th Part, it is used for book keeping
+			return
+		}
+
+		err := os.Remove(jppfn.GetJobPartPlanPath()); 
+		
+		if err != nil {
+			Log(pipeline.LogError, err.Error())
+		}
+	} ()
 
 	if canceled {
 		return ErrorEx{code: int32(syscall.ECANCELED), msg: "Job Cancelled"}
