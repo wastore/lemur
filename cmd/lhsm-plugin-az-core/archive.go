@@ -29,7 +29,6 @@ type ArchiveOptions struct {
 	BlockSize     int64
 	Pacer         util.Pacer
 	ExportPrefix  string
-	HNSEnabled    bool
 	HTTPClient    *http.Client
 	OpStartTime   time.Time
 }
