@@ -355,7 +355,7 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		TotalBytesEnumerated: order.Transfers.TotalSizeInBytes,
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
-	part, _ := jobMgr.JobPartMgr(p)
+	part, _ := jobMgr.JobPartMgr(common.PartNumber(p))
 
 	canceled := false
 	select {
