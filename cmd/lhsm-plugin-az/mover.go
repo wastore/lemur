@@ -187,7 +187,8 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 				m.config.SASContext = time.Now()
 				m.config.setContainerURL()
 				util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
-				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextTryInterval).String()))
+				//Since refresh is successful, next refresh - after m.config.CredRefreshInterval
+				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(defaultRefreshInterval).String()))
 				break
 			}
 
