@@ -185,6 +185,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 				//we've a valid SAS
 				m.config.AzStorageSAS = sas
 				m.config.SASContext = time.Now()
+				m.config.setContainerURL()
 				util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
 				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextTryInterval).String()))
 				break
