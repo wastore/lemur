@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -56,6 +55,7 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
+	configLock	    sync.Mutex
 	actions             cancelMap //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
@@ -260,7 +260,10 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	m.configLock.Lock()
 	m.actions.add(action.PrimaryPath(),cancel)
+	m.configLock.Unlock()
+
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
 		ContainerURL:  m.config.ContainerURL(),
@@ -286,7 +289,9 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
+	m.configLock.Lock()
 	m.actions.delete(action.PrimaryPath())
+	m.configLock.Unlock()
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -334,7 +339,9 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	m.configLock.Lock()
 	m.actions.add(action.PrimaryPath(), cancel)
+	m.configLock.Unlock()
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		ContainerURL:    m.config.ContainerURL(),
@@ -358,7 +365,9 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
+	m.configLock.Lock()
 	m.actions.delete(action.PrimaryPath())
+	m.configLock.Unlock()
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -411,6 +420,8 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 
 func (m *Mover) Cancel(action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	m.configLock.Lock()
+	defer m.configLock.Unlock()
 	if cancel, ok := m.actions.cancelFunc(action.PrimaryPath()); ok {
 		cancel()
 		return nil
