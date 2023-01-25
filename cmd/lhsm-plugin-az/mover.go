@@ -157,9 +157,8 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 
 	for {
-		retryDelay := 4 * time.Second
-		try := 1 // Number of retries to get the SAS. Starts at 1.
-		var nextTryInterval time.Duration
+
+		expMultiplier := [4]int{4, 8, 16, 32}
 
 		select {
 		case <-time.After(defaultRefreshInterval): // we always try to refresh
@@ -173,7 +172,8 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 			continue
 		}
 
-		for { //loop till we've a valid SAS
+		for try := 0; ;try++{ //loop till we've a valid SAS
+			var nextTryInterval time.Duration
 			sas, err := util.GetKVSecret(m.config.AzStorageKVURL, m.config.AzStorageKVSecretName)
 			if err == nil {
 				if ok, reason := util.IsSASValid(sas); !ok {
@@ -191,16 +191,22 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 			}
 
 			/*
-			 * Failed to update SAS. We'll retry with exponential delay.
+			 * Failed to update SAS. We'll retry with exponential delay for upto a minute
+			 * and after that we'll try every minute
+			 * 
+			 * To not spam the log file, we'll only log first few retries and then once
+			 * every hr.
 			 */
-			util.Log(pipeline.LogError, fmt.Sprintf(
-				"Failed to update SAS.\nReason: %s, try: %d",
-				err, try))
-			nextTryInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
-			if nextTryInterval >= time.Duration(1 * time.Minute) {
-				nextTryInterval = 1 * time.Minute
+			 if (try < 10 || try%60 == 0) {
+				util.Log(pipeline.LogError, fmt.Sprintf(
+					"Failed to update SAS.\nReason: %s, try: %d",
+					err, (try + 1)))
 			}
-			try++
+			
+			nextTryInterval = time.Minute
+			if try < len(expMultiplier) {
+				nextTryInterval = time.Duration(expMultiplier[try]) * time.Second
+			}
 
 			//retry after delay
 			time.Sleep(nextTryInterval)
