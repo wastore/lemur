@@ -416,7 +416,7 @@ func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan *pb.Act
 
 func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 	maxTryCount := 3
-	if r := os.Getenv("COPTOOL_RETRY_COUNT"); r != "" {
+	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
 		if v, err := strconv.Atoi(r); err == nil {
 			maxTryCount = v
 		}
