@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -55,7 +56,6 @@ type Mover struct {
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	configLock	    sync.Mutex
 	actions             cancelMap //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
@@ -157,8 +157,9 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 
 	for {
-
-		expMultiplier := [4]int{4, 8, 16, 32}
+		retryDelay := 4 * time.Second
+		try := 1 // Number of retries to get the SAS. Starts at 1.
+		var nextTryInterval time.Duration
 
 		select {
 		case <-time.After(defaultRefreshInterval): // we always try to refresh
@@ -172,8 +173,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 			continue
 		}
 
-		for try := 0; ;try++{ //loop till we've a valid SAS
-			var nextTryInterval time.Duration
+		for { //loop till we've a valid SAS
 			sas, err := util.GetKVSecret(m.config.AzStorageKVURL, m.config.AzStorageKVSecretName)
 			if err == nil {
 				if ok, reason := util.IsSASValid(sas); !ok {
@@ -185,30 +185,22 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 				//we've a valid SAS
 				m.config.AzStorageSAS = sas
 				m.config.SASContext = time.Now()
-				m.config.setContainerURL()
 				util.Log(pipeline.LogInfo, fmt.Sprint("Updated SAS at "+time.Now().String()))
-				//Since refresh is successful, next refresh - after m.config.CredRefreshInterval
-				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(defaultRefreshInterval).String()))
+				util.Log(pipeline.LogInfo, fmt.Sprintf("Next refresh at %s", time.Now().Add(nextTryInterval).String()))
 				break
 			}
 
 			/*
-			 * Failed to update SAS. We'll retry with exponential delay for upto a minute
-			 * and after that we'll try every minute
-			 * 
-			 * To not spam the log file, we'll only log first few retries and then once
-			 * every hr.
+			 * Failed to update SAS. We'll retry with exponential delay.
 			 */
-			 if (try < 10 || try%60 == 0) {
-				util.Log(pipeline.LogError, fmt.Sprintf(
-					"Failed to update SAS.\nReason: %s, try: %d",
-					err, (try + 1)))
+			util.Log(pipeline.LogError, fmt.Sprintf(
+				"Failed to update SAS.\nReason: %s, try: %d",
+				err, try))
+			nextTryInterval = time.Duration(math.Pow(2, float64(try))-1) * retryDelay
+			if nextTryInterval >= time.Duration(1 * time.Minute) {
+				nextTryInterval = 1 * time.Minute
 			}
-			
-			nextTryInterval = time.Minute
-			if try < len(expMultiplier) {
-				nextTryInterval = time.Duration(expMultiplier[try]) * time.Second
-			}
+			try++
 
 			//retry after delay
 			time.Sleep(nextTryInterval)
@@ -260,10 +252,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.configLock.Lock()
 	m.actions.add(action.PrimaryPath(),cancel)
-	m.configLock.Unlock()
-
 
 	total, err := core.Archive(ctx, core.ArchiveOptions{
 		ContainerURL:  m.config.ContainerURL(),
@@ -289,9 +278,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	m.configLock.Lock()
 	m.actions.delete(action.PrimaryPath())
-	m.configLock.Unlock()
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -339,9 +326,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m.configLock.Lock()
 	m.actions.add(action.PrimaryPath(), cancel)
-	m.configLock.Unlock()
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		ContainerURL:    m.config.ContainerURL(),
@@ -365,9 +350,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
-	m.configLock.Lock()
 	m.actions.delete(action.PrimaryPath())
-	m.configLock.Unlock()
 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -420,8 +403,6 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 
 func (m *Mover) Cancel(action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	m.configLock.Lock()
-	defer m.configLock.Unlock()
 	if cancel, ok := m.actions.cancelFunc(action.PrimaryPath()); ok {
 		cancel()
 		return nil
