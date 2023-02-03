@@ -35,6 +35,7 @@ type ILogger interface {
 	CloseLog()
 	Log(level pipeline.LogLevel, msg string)
 	Panic(err error)
+	ShouldLog(level pipeline.LogLevel) bool
 }
 
 //Default logger instance
@@ -85,7 +86,7 @@ func (jl *jobLogger) CloseLog() {
 	return
 }
 
-func (jl jobLogger) Log(loglevel pipeline.LogLevel, msg string) {
+func (jl *jobLogger) Log(loglevel pipeline.LogLevel, msg string) {
 	// ensure all secrets are redacted
 	msg = jl.sanitizer.SanitizeLogMessage(msg)
 	jl.logger.Println(msg)
@@ -93,6 +94,17 @@ func (jl jobLogger) Log(loglevel pipeline.LogLevel, msg string) {
 
 func Log(logLevel pipeline.LogLevel, msg string) {
 	globalLogger.Log(logLevel, msg)
+}
+
+func ShouldLog(level pipeline.LogLevel) bool {
+	return globalLogger.ShouldLog(level)
+}
+
+func (jl *jobLogger) ShouldLog(level pipeline.LogLevel) bool {
+	if level == pipeline.LogNone {
+		return false
+	}
+	return level <= jl.minimumLevelToLog
 }
 
 const tryEquals string = "Try=" // TODO: refactor so that this can be used by the retry policies too?  So that when you search the logs for Try= you are guaranteed to find both types of retry (i.e. request send retries, and body read retries)

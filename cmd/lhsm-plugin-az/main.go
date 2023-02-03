@@ -382,6 +382,8 @@ func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
 }
 
 func main() {
+	var minimumLevelToLog pipeline.LogLevel
+
 	plugin, err := dmplugin.New(path.Base(os.Args[0]), func(path string) (fsroot.Client, error) {
 		return fsroot.New(path)
 	})
@@ -408,7 +410,24 @@ func main() {
 		alert.Abort(errors.Wrap(err, "registering HSM event FIFO (plugin)"))
 	}
 	defer llapi.UnregisterErrorCB(cfg.EventFIFOPath)
-	util.InitJobLogger(pipeline.LogDebug)
+
+	switch cfg.LogLevel {
+		case "none":
+			minimumLevelToLog = pipeline.LogNone
+		case "fatal":
+			minimumLevelToLog = pipeline.LogFatal
+		case "panic":
+			minimumLevelToLog = pipeline.LogPanic
+		case "error":
+			minimumLevelToLog = pipeline.LogError
+		case "warning":
+			minimumLevelToLog = pipeline.LogWarning
+		case "info":
+			minimumLevelToLog = pipeline.LogInfo
+		default:
+			minimumLevelToLog = pipeline.LogDebug
+	}
+	util.InitJobLogger(minimumLevelToLog)
 
 	for _, ac := range cfg.Archives {
 		ac.mergeGlobals(cfg)

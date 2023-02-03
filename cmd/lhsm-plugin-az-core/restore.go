@@ -33,15 +33,17 @@ func Restore(ctx context.Context, o RestoreOptions) (int64, error) {
 	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
 	containerURL := azblob.NewContainerURL(*o.ContainerURL, p)
 	blobURL := containerURL.NewBlockBlobURL(o.BlobName)
-
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring %s to %s.", blobURL.String(), o.DestinationPath))
-
 	blobProp, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return 0, err
 	}
 	contentLen := blobProp.ContentLength()
-	
+
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Restoring %s to %s.", blobURL.String(), o.DestinationPath))
+	} else {
+		util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring blob to %s.", o.DestinationPath))
+	}
 	err = util.Download(ctx, blobURL.String(), o.DestinationPath, o.BlockSize)
 
 	return contentLen, err
