@@ -86,7 +86,11 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 
 //Archive copies local file to HNS
 func Archive(ctx context.Context, o ArchiveOptions) (size int64, err error) {
-	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", o.BlobName))
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Archiving %s", o.BlobName))
+	} else {
+		util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", o.SourcePath))
+	}
 	wg := sync.WaitGroup{}
 
 	parents := strings.Split(o.BlobName, string(os.PathSeparator))

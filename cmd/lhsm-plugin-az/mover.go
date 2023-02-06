@@ -217,7 +217,11 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 }
 
 func (m *Mover) Archive(action dmplugin.Action) error {
-	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	} else {
+		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
+	}
 	rate.Mark(1)
 	start := time.Now()
 
@@ -243,7 +247,9 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to get pathname")
 	}
-	util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
+	}
 
 	if len(fnames) > 1 {
 		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
@@ -292,11 +298,16 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 	m.configLock.Lock()
 	m.actions.delete(action.PrimaryPath())
 	m.configLock.Unlock()
-
-	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath(),
 		m.config.Container, fileKey))
+	} else {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
+		time.Since(start),
+		action.PrimaryPath()))
+	}
 
 	u := url.URL{
 		Scheme: "az",
@@ -312,7 +323,11 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 
 // Restore fulfills an HSM Restore request
 func (m *Mover) Restore(action dmplugin.Action) error {
-	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+	} else {
+		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
+	}
 	rate.Mark(1)
 
 	var pacer util.Pacer
@@ -368,11 +383,17 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	m.configLock.Lock()
 	m.actions.delete(action.PrimaryPath())
 	m.configLock.Unlock()
-
-	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
 		srcObj,
 		action.PrimaryPath()))
+	} else {
+		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Restored %d bytes in %v to %s", m.name, action.ID(), contentLen,
+		time.Since(start),
+		action.PrimaryPath()))
+
+	}
 
 	action.SetActualLength(contentLen)
 	return nil
