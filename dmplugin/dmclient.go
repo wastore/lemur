@@ -24,7 +24,7 @@ import (
 
 type (
 	// ActionHandler is function that implements one of the commands
-	ActionHandler func(Action) error
+	ActionHandler func(context.Context, Action) error
 
 	actionFunc func()
 
@@ -103,23 +103,19 @@ type (
 	// Archiver defines an interface for data movers capable of
 	// fulfilling Archive requests
 	Archiver interface {
-		Archive(Action) error
+		Archive(context.Context, Action) error
 	}
 
 	// Restorer defines an interface for data movers capable of
 	// fulfilling Restore requests
 	Restorer interface {
-		Restore(Action) error
+		Restore(context.Context, Action) error
 	}
 
 	// Remover defines an interface for data movers capable of
 	// fulfilling Remove requests
 	Remover interface {
-		Remove(Action) error
-	}
-
-	Canceler interface {
-		Cancel(Action) error
+		Remove(context.Context, Action) error
 	}
 )
 
@@ -279,9 +275,6 @@ func NewMover(plugin *Plugin, cli pb.DataMoverClient, config *Config) *DataMover
 	if remover, ok := config.Mover.(Remover); ok {
 		actions[pb.Command_REMOVE] = remover.Remove
 	}
-	if canceler, ok := config.Mover.(Canceler); ok {
-		actions[pb.Command_CANCEL] = canceler.Cancel
-	}
 
 	return &DataMoverClient{
 		plugin:    plugin,
@@ -341,6 +334,8 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 
 func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
 	actions := make(chan actionFunc)
+	var cancelMap sync.Map
+
 	maxTryCount := 3
 	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
 		if v, err := strconv.Atoi(r); err == nil {
@@ -349,7 +344,7 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
 	}
 
 	var process func(context.Context, *pb.ActionItem)
-	process = func (_ context.Context, item *pb.ActionItem) {
+	process = func (actionCtx context.Context, item *pb.ActionItem) {
 		action := &dmAction{
 			status: dm.status,
 			item:   item,
@@ -357,14 +352,19 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
 
 		actionFn, err := dm.getActionHandler(item.Op)
 		if err == nil {
-			err = actionFn(action)
+			err = actionFn(actionCtx, action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
 		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
 			item.TryCount += 1
-			go func() { actions <- func() { process(context.TODO(), item) } }()
+			// Refresh the context and update cancelMap
+			actionCtx, cancel := context.WithCancel(ctx)
+			cancelMap.Store(action.PrimaryPath(), cancel)
+
+			go func() { actions <- func() { process(actionCtx, item) } }()
 		} else {
 			action.Finish(err)
+			cancelMap.Delete(action.PrimaryPath()) // Delete from map
 		}
 		
 		if err != nil {
@@ -397,7 +397,21 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
 			// debug.Printf("Got message id:%d op: %v %v", action.Id, action.Op, action.PrimaryPath)
 
 			action.TryCount = 0 //first try
-			actions <- func() { process(context.TODO(), action) }
+
+			if (action.Op == pb.Command_CANCEL) {
+				// lookup in the map and cancel the context
+				cancel, ok := cancelMap.Load(action.PrimaryPath)
+				if !ok {
+					alert.Warnf("Received Cancel for a non-existent action: %s", action.PrimaryPath)
+					continue
+				}
+				alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.Id, action.PrimaryPath))
+				cancel.(context.CancelFunc)()
+			} else {
+				actionCtx, cancel := context.WithCancel(ctx)
+				cancelMap.Store(action.PrimaryPath, cancel ) // save this so that we can cancel if required
+				actions <- func() { process(actionCtx, action) }
+			}
 		}
 
 	}()

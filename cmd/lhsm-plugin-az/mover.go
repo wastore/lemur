@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
@@ -25,38 +24,12 @@ import (
 	"github.com/wastore/lemur/dmplugin"
 )
 
-type cancelMap struct {
-	m map[string]context.CancelFunc
-	l sync.Mutex
-}
-
-func (c *cancelMap) add(key string, v context.CancelFunc) {
-	c.l.Lock()
-	defer c.l.Unlock()
-	c.m[key] = v
-}
-
-func (c *cancelMap) delete(key string) {
-	c.l.Lock()
-	defer c.l.Unlock()
-	delete(c.m, key)
-}
-
-func (c *cancelMap) cancelFunc(key string) (context.CancelFunc, bool) {
-	c.l.Lock()
-	defer c.l.Unlock()
-	f, ok := c.m[key]
-	return f, ok
-}
-
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
 	name                string
 	cred                azblob.Credential
 	httpClient          *http.Client
 	config              *archiveConfig
-	configLock	    sync.Mutex
-	actions             cancelMap //Actions in progress
 
 	//*Channels to interact wtih SAS Manager
 	getSAS              chan chan string
@@ -83,7 +56,6 @@ func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mov
 		},
 		getSAS:             make(chan chan string),
 		forceSASRefresh:    make(chan time.Time),
-		actions:            cancelMap{m: make(map[string]context.CancelFunc)},
 	}
 }
 
@@ -216,7 +188,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 	}	
 }
 
-func (m *Mover) Archive(action dmplugin.Action) error {
+func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	} else {
@@ -263,14 +235,6 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	m.configLock.Lock()
-	m.actions.add(action.PrimaryPath(),cancel)
-	m.configLock.Unlock()
-
-
 	total, err := core.Archive(ctx, core.ArchiveOptions{
 		ContainerURL:  m.config.ContainerURL(),
 		ResourceSAS:   sas,
@@ -295,9 +259,6 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 		return err
 	}
 
-	m.configLock.Lock()
-	m.actions.delete(action.PrimaryPath())
-	m.configLock.Unlock()
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
 		time.Since(start),
@@ -322,7 +283,7 @@ func (m *Mover) Archive(action dmplugin.Action) error {
 }
 
 // Restore fulfills an HSM Restore request
-func (m *Mover) Restore(action dmplugin.Action) error {
+func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	} else {
@@ -351,12 +312,6 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	m.configLock.Lock()
-	m.actions.add(action.PrimaryPath(), cancel)
-	m.configLock.Unlock()
 
 	contentLen, err := core.Restore(ctx, core.RestoreOptions{
 		ContainerURL:    m.config.ContainerURL(),
@@ -380,9 +335,6 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 		return err
 	}
 
-	m.configLock.Lock()
-	m.actions.delete(action.PrimaryPath())
-	m.configLock.Unlock()
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
@@ -400,7 +352,7 @@ func (m *Mover) Restore(action dmplugin.Action) error {
 }
 
 // Remove fulfills an HSM Remove request
-func (m *Mover) Remove(action dmplugin.Action) error { 
+func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error { 
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	if action.UUID() == "" {
@@ -418,7 +370,7 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 		return err
 	}
 
-	err = core.Remove(core.RemoveOptions{
+	err = core.Remove(ctx, core.RemoveOptions{
 		ContainerURL:   m.config.ContainerURL(),
 		ResourceSAS:   sas,
 		BlobName:      srcObj,
@@ -436,16 +388,4 @@ func (m *Mover) Remove(action dmplugin.Action) error {
 	}
 
 	return nil
-}
-
-
-func (m *Mover) Cancel(action dmplugin.Action) error {
-	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Cancel %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	m.configLock.Lock()
-	defer m.configLock.Unlock()
-	if cancel, ok := m.actions.cancelFunc(action.PrimaryPath()); ok {
-		cancel()
-		return nil
-	}
-	return errors.New("Could not find action with specified UUID")
 }
