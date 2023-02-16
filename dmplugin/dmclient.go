@@ -26,6 +26,8 @@ type (
 	// ActionHandler is function that implements one of the commands
 	ActionHandler func(Action) error
 
+	actionFunc func()
+
 	// DataMoverClient is the data mover client to the HSM agent
 	DataMoverClient struct {
 		plugin    *Plugin
@@ -337,8 +339,38 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 	return handle, nil
 }
 
-func (dm *DataMoverClient) processActions(ctx context.Context) chan *pb.ActionItem {
-	actions := make(chan *pb.ActionItem)
+func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
+	actions := make(chan actionFunc)
+	maxTryCount := 3
+	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
+		if v, err := strconv.Atoi(r); err == nil {
+			maxTryCount = v
+		}
+	}
+
+	var process func(context.Context, *pb.ActionItem)
+	process = func (_ context.Context, item *pb.ActionItem) {
+		action := &dmAction{
+			status: dm.status,
+			item:   item,
+		}
+
+		actionFn, err := dm.getActionHandler(item.Op)
+		if err == nil {
+			err = actionFn(action)
+		}
+		// debug.Printf("completed (action: %v) %v ", action, ret)
+		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
+			item.TryCount += 1
+			go func() { actions <- func() { process(context.TODO(), item) } }()
+		} else {
+			action.Finish(err)
+		}
+		
+		if err != nil {
+			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+		}
+	}
 
 	go func() {
 		defer close(actions)
@@ -365,7 +397,7 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *pb.ActionIt
 			// debug.Printf("Got message id:%d op: %v %v", action.Id, action.Op, action.PrimaryPath)
 
 			action.TryCount = 0 //first try
-			actions <- action
+			actions <- func() { process(context.TODO(), action) }
 		}
 
 	}()
@@ -408,40 +440,15 @@ func (dm *DataMoverClient) getActionHandler(op pb.Command) (ActionHandler, error
 	return fn, nil
 }
 
-func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan *pb.ActionItem) {
+func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan actionFunc) {
 	item.TryCount += 1
 	debug.Printf("Retrying action %d.Trycount: %d", item.Id, item.TryCount)
-	actions <- item
+	go func() { actions <- func() {} }() // Separate goroutine so as to not block handler
 }
 
-func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
-	maxTryCount := 3
-	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
-		if v, err := strconv.Atoi(r); err == nil {
-			maxTryCount = v
-		}
-	}
-	
-	for item := range actions {
-		action := &dmAction{
-			status: dm.status,
-			item:   item,
-		}
-
-		actionFn, err := dm.getActionHandler(item.Op)
-		if err == nil {
-			err = actionFn(action)
-		}
-		// debug.Printf("completed (action: %v) %v ", action, ret)
-		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
-			go dm.requeueItem(item, actions)
-		} else {
-			action.Finish(err)
-		}
-		
-		if err != nil {
-			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
-		}
+func (dm *DataMoverClient) handler(name string, actions chan actionFunc) {
+	for action := range actions {
+		action()
 	}
 	debug.Printf("%s: stopping", name)
 }
