@@ -332,8 +332,13 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 	return handle, nil
 }
 
-func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
+func (dm *DataMoverClient) processActions(parentCtx context.Context) chan actionFunc {
 	actions := make(chan actionFunc)
+
+
+	var processAction func(context.Context, *dmAction)
+	var queueAction func(context.Context, *dmAction)
+	var cancelAction func(*dmAction)
 	var cancelMap sync.Map
 
 	maxTryCount := 3
@@ -343,49 +348,63 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
 		}
 	}
 
-	var process func(context.Context, *pb.ActionItem)
-	process = func (actionCtx context.Context, item *pb.ActionItem) {
-		action := &dmAction{
-			status: dm.status,
-			item:   item,
-		}
+	queueAction = func(ctx context.Context, action *dmAction) {
+		childCtx, cancel := context.WithCancel(ctx)
+		cancelMap.Store(action.PrimaryPath(), cancel)
+		// Caller of this func is either processActions or handlers. Need to spawn
+		// a new goroutine below to not block the caller
+		go func() {actions <- func() { processAction(childCtx, action) } }()
+	}
 
-		actionFn, err := dm.getActionHandler(item.Op)
-		if err == nil {
-			err = actionFn(actionCtx, action)
-		}
-		// debug.Printf("completed (action: %v) %v ", action, ret)
-		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
-			item.TryCount += 1
-			// Refresh the context and update cancelMap
-			actionCtx, cancel := context.WithCancel(ctx)
-			cancelMap.Store(action.PrimaryPath(), cancel)
+	processAction = func (ctx context.Context, action *dmAction) {
 
-			go func() { actions <- func() { process(actionCtx, item) } }()
-		} else {
-			action.Finish(err)
-			cancelMap.Delete(action.PrimaryPath()) // Delete from map
+		actionFn, err := dm.getActionHandler(action.item.Op)
+		if err != nil {
+			util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error())
+			return
 		}
 		
-		if err != nil {
-			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+		err = actionFn(ctx, action)
+		
+		if err != nil && util.ShouldRetry(err) && action.item.TryCount < int64(maxTryCount) {
+			action.item.TryCount += 1
+			queueAction(parentCtx, action) //Use parent context
+			util.NewAzCopyLogSanitizer().SanitizeLogMessage("Retrying: " + err.Error())
+			return
 		}
+
+		action.Finish(err)
+		cancelMap.Delete(action.PrimaryPath()) // Delete from map
+	}
+
+	cancelAction = func(action *dmAction) {
+		// lookup in the map and cancel the context
+		cancel, ok := cancelMap.Load(action.item.PrimaryPath)
+		if !ok {
+			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
+			alert.Warnf(msg)
+			action.Finish(errors.New(msg))
+		}
+
+		alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.item.Id, action.item.PrimaryPath))
+		cancel.(context.CancelFunc)()
+		action.Finish(nil)
 	}
 
 	go func() {
 		defer close(actions)
-		handle, ok := getHandle(ctx)
+		handle, ok := getHandle(parentCtx)
 		if !ok {
 			alert.Warn(errors.New("No context"))
 			return
 		}
-		stream, err := dm.rpcClient.GetActions(ctx, handle)
+		stream, err := dm.rpcClient.GetActions(parentCtx, handle)
 		if err != nil {
 			alert.Warn(errors.Wrap(err, "GetActions() failed"))
 			return
 		}
 		for {
-			action, err := stream.Recv()
+			item, err := stream.Recv()
 			if err != nil {
 				if err == io.EOF {
 					debug.Print("Shutting down dmclient action stream")
@@ -396,21 +415,16 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan actionFunc {
 			}
 			// debug.Printf("Got message id:%d op: %v %v", action.Id, action.Op, action.PrimaryPath)
 
-			action.TryCount = 0 //first try
+			item.TryCount = 0 //first try
+			action := &dmAction{
+				status: dm.status,
+				item: item,
+			}
 
-			if (action.Op == pb.Command_CANCEL) {
-				// lookup in the map and cancel the context
-				cancel, ok := cancelMap.Load(action.PrimaryPath)
-				if !ok {
-					alert.Warnf("Received Cancel for a non-existent action: %s", action.PrimaryPath)
-					continue
-				}
-				alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.Id, action.PrimaryPath))
-				cancel.(context.CancelFunc)()
+			if (item.Op == pb.Command_CANCEL) {
+				cancelAction(action)
 			} else {
-				actionCtx, cancel := context.WithCancel(ctx)
-				cancelMap.Store(action.PrimaryPath, cancel ) // save this so that we can cancel if required
-				actions <- func() { process(actionCtx, action) }
+				queueAction(parentCtx, action)
 			}
 		}
 
@@ -452,12 +466,6 @@ func (dm *DataMoverClient) getActionHandler(op pb.Command) (ActionHandler, error
 		return nil, errors.New("Command not supported")
 	}
 	return fn, nil
-}
-
-func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan actionFunc) {
-	item.TryCount += 1
-	debug.Printf("Retrying action %d.Trycount: %d", item.Id, item.TryCount)
-	go func() { actions <- func() {} }() // Separate goroutine so as to not block handler
 }
 
 func (dm *DataMoverClient) handler(name string, actions chan actionFunc) {
