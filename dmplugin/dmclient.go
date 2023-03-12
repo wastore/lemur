@@ -334,10 +334,10 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 
 func (dm *DataMoverClient) processActions(parentCtx context.Context) chan actionFunc {
 	actions := make(chan actionFunc)
-
+	ctx, cancel := context.WithCancel(parentCtx)
 
 	var processAction func(context.Context, *dmAction)
-	var queueAction func(context.Context, *dmAction)
+	var queueAction func(*dmAction)
 	var cancelAction func(*dmAction)
 	var cancelMap sync.Map
 
@@ -348,15 +348,20 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 		}
 	}
 
-	queueAction = func(ctx context.Context, action *dmAction) {
-		childCtx, cancel := context.WithCancel(ctx)
+	queueAction = func(action *dmAction) {
+		childCtx, cancel := context.WithCancel(parentCtx)
 		cancelMap.Store(action.PrimaryPath(), cancel)
-		// Caller of this func is either processActions or handlers. Need to spawn
+		// Caller of queueAction is either processActions or handlers. Need to spawn
 		// a new goroutine below to not block the caller
-		go func() {actions <- func() { processAction(childCtx, action) } }()
+		go func() {
+			select {
+			case <-ctx.Done():
+			case actions <- func() { processAction(childCtx, action) }:
+			}
+		}()
 	}
 
-	processAction = func (ctx context.Context, action *dmAction) {
+	processAction = func(childCtx context.Context, action *dmAction) {
 
 		actionFn, err := dm.getActionHandler(action.item.Op)
 		if err != nil {
@@ -364,11 +369,11 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 			return
 		}
 		
-		err = actionFn(ctx, action)
+		err = actionFn(childCtx, action)
 		
 		if err != nil && util.ShouldRetry(err) && action.item.TryCount < int64(maxTryCount) {
 			action.item.TryCount += 1
-			queueAction(parentCtx, action) //Use parent context
+			queueAction(action) //Use parent context
 			util.NewAzCopyLogSanitizer().SanitizeLogMessage("Retrying: " + err.Error())
 			return
 		}
@@ -392,6 +397,7 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 	}
 
 	go func() {
+		defer cancel()
 		defer close(actions)
 		handle, ok := getHandle(parentCtx)
 		if !ok {
@@ -424,7 +430,7 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 			if (item.Op == pb.Command_CANCEL) {
 				cancelAction(action)
 			} else {
-				queueAction(parentCtx, action)
+				queueAction(action)
 			}
 		}
 
