@@ -356,6 +356,7 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 		go func() {
 			select {
 			case <-ctx.Done():
+				cancelMap.Delete(action.PrimaryPath())
 			case actions <- func() { processAction(childCtx, action) }:
 			}
 		}()
@@ -389,6 +390,7 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
 			alert.Warnf(msg)
 			action.Finish(errors.New(msg))
+			return
 		}
 
 		alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.item.Id, action.item.PrimaryPath))
