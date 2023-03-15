@@ -21,8 +21,8 @@ type RemoveOptions struct {
 	OpStartTime   time.Time
 }
 
-func Remove(o RemoveOptions) error {
-	ctx, _ := context.WithTimeout(context.Background(), time.Minute * 3)
+func Remove(ctx context.Context, o RemoveOptions) error {
+	ctx, _ = context.WithTimeout(ctx, time.Minute * 3)
 	p := azblob.NewPipeline(o.Credential, azblob.PipelineOptions{})
 	blobPath := path.Join(o.ExportPrefix, o.BlobName)
 	blobURL := azblob.NewContainerURL(*o.ContainerURL, p).NewBlockBlobURL(blobPath)
