@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"syscall"
 
 	"github.com/pkg/errors"
@@ -37,6 +36,7 @@ type (
 		mover     Mover
 		config    *Config
 		actions   map[pb.Command]ActionHandler
+		cancelMap sync.Map
 	}
 
 	// Config defines configuration for a DatamMoverClient
@@ -48,6 +48,7 @@ type (
 
 	// Action is a data movement action
 	dmAction struct {
+		ctx          context.Context
 		status       chan *pb.ActionStatus
 		item         *pb.ActionItem
 		actualLength *int64
@@ -333,67 +334,16 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 	return handle, nil
 }
 
-func (dm *DataMoverClient) processActions(parentCtx context.Context) chan actionFunc {
-	atomicCurrentActionCount := int32(0)
-	actions := make(chan actionFunc)
-	ctx, cancel := context.WithCancel(parentCtx)
-
-	var processAction func(context.Context, *dmAction)
-	var queueAction func(*dmAction)
-	var cancelAction func(*dmAction)
-	var cancelMap sync.Map
-
-	maxTryCount := 3
-	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
-		if v, err := strconv.Atoi(r); err == nil {
-			maxTryCount = v
-		}
-	}
-
+func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 	maxActionCount := defaultNumThreads * 2
 	if dm.config.NumThreads > 0 {
 		maxActionCount = dm.config.NumThreads * 2
 	}
 
-	queueAction = func(action *dmAction) {
-		childCtx, cancel := context.WithCancel(parentCtx)
-		cancelMap.Store(action.PrimaryPath(), cancel)
-		// Caller of queueAction is either processActions or handlers. Need to spawn
-		// a new goroutine below to not block the caller
-		go func() {
-			select {
-			case <-ctx.Done():
-				cancelMap.Delete(action.PrimaryPath())
-			case actions <- func() { processAction(childCtx, action) }:
-			}
-		}()
-	}
-
-	processAction = func(childCtx context.Context, action *dmAction) {
-
-		actionFn, err := dm.getActionHandler(action.item.Op)
-		if err != nil {
-			util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error())
-			return
-		}
-		
-		err = actionFn(childCtx, action)
-		
-		if err != nil && util.ShouldRetry(err) && action.item.TryCount < int64(maxTryCount) {
-			action.item.TryCount += 1
-			queueAction(action) //Use parent context
-			util.NewAzCopyLogSanitizer().SanitizeLogMessage("Retrying: " + err.Error())
-			return
-		}
-
-		atomic.AddInt32(&atomicCurrentActionCount, -1)
-		action.Finish(err)
-		cancelMap.Delete(action.PrimaryPath()) // Delete from map
-	}
-
-	cancelAction = func(action *dmAction) {
+	actions := make(chan *dmAction, maxActionCount)
+	cancelAction := func(action *dmAction) {
 		// lookup in the map and cancel the context
-		cancel, ok := cancelMap.Load(action.item.PrimaryPath)
+		cancel, ok := dm.cancelMap.Load(action.PrimaryPath())
 		if !ok {
 			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
 			alert.Warnf(msg)
@@ -407,14 +357,13 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 	}
 
 	go func() {
-		defer cancel()
 		defer close(actions)
-		handle, ok := getHandle(parentCtx)
+		handle, ok := getHandle(ctx)
 		if !ok {
 			alert.Warn(errors.New("No context"))
 			return
 		}
-		stream, err := dm.rpcClient.GetActions(parentCtx, handle)
+		stream, err := dm.rpcClient.GetActions(ctx, handle)
 		if err != nil {
 			alert.Warn(errors.Wrap(err, "GetActions() failed"))
 			return
@@ -432,19 +381,21 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 			// debug.Printf("Got message id:%d op: %v %v", action.Id, action.Op, action.PrimaryPath)
 
 			item.TryCount = 0 //first try
-			action := &dmAction{
-				status: dm.status,
-				item: item,
-			}
+			c, cancel := context.WithCancel(ctx)
+			action := &dmAction{ status: dm.status, item: item, ctx: c, }
 
 			if (item.Op == pb.Command_CANCEL) {
 				cancelAction(action)
-			} else if (atomic.LoadInt32(&atomicCurrentActionCount) > int32(maxActionCount)) {
-				alert.Warnf("Request limit reached. Failing action %s, command %d", action.PrimaryPath(), action.item.Op)
-				action.Finish(util.CopytoolBusy)
 			} else {
-				atomic.AddInt32(&atomicCurrentActionCount, 1)
-				queueAction(action)
+				/* if actions is full, we'll get to default clause */
+				select {
+				case actions <- action:
+					/* Safe to be done after sending because these values are handled only by this thread */
+					dm.cancelMap.Store(action.PrimaryPath(), cancel)
+				default:
+					alert.Warnf("Request limit reached. Failing action %s, command %d", action.PrimaryPath(), action.item.Op)
+					action.Finish(util.CopytoolBusy)
+				}
 			}
 		}
 
@@ -488,9 +439,32 @@ func (dm *DataMoverClient) getActionHandler(op pb.Command) (ActionHandler, error
 	return fn, nil
 }
 
-func (dm *DataMoverClient) handler(name string, actions chan actionFunc) {
+func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
+	maxTryCount := 3
+	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
+		if v, err := strconv.Atoi(r); err == nil {
+			maxTryCount = v
+		}
+	}
+	
 	for action := range actions {
-		action()
+		actionFn, err := dm.getActionHandler(action.item.Op)
+		if err == nil {
+			err = actionFn(action.ctx, action)
+		}
+		// debug.Printf("completed (action: %v) %v ", action, ret)
+		if util.ShouldRetry(err) && action.item.TryCount < int64(maxTryCount) {
+			action.item.TryCount += 1
+			debug.Printf("Retrying action %d.Trycount: %d. Error: %s", action.item.Id, action.item.TryCount, err.Error())
+			go func() { actions <- action }()
+		} else {
+			action.Finish(err)
+			dm.cancelMap.Delete(action.PrimaryPath()) // Delete from map
+		}
+		
+		if err != nil {
+			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
+		}
 	}
 	debug.Printf("%s: stopping", name)
 }
