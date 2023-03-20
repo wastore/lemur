@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/pkg/errors"
@@ -333,6 +334,7 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 }
 
 func (dm *DataMoverClient) processActions(parentCtx context.Context) chan actionFunc {
+	atomicCurrentActionCount := int32(0)
 	actions := make(chan actionFunc)
 	ctx, cancel := context.WithCancel(parentCtx)
 
@@ -346,6 +348,11 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 		if v, err := strconv.Atoi(r); err == nil {
 			maxTryCount = v
 		}
+	}
+
+	maxActionCount := defaultNumThreads * 2
+	if dm.config.NumThreads > 0 {
+		maxActionCount = dm.config.NumThreads * 2
 	}
 
 	queueAction = func(action *dmAction) {
@@ -379,6 +386,7 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 			return
 		}
 
+		atomic.AddInt32(&atomicCurrentActionCount, -1)
 		action.Finish(err)
 		cancelMap.Delete(action.PrimaryPath()) // Delete from map
 	}
@@ -431,7 +439,11 @@ func (dm *DataMoverClient) processActions(parentCtx context.Context) chan action
 
 			if (item.Op == pb.Command_CANCEL) {
 				cancelAction(action)
+			} else if (atomic.LoadInt32(&atomicCurrentActionCount) > int32(maxActionCount)) {
+				alert.Warnf("Request limit reached. Failing action %s, command %d", action.PrimaryPath(), action.item.Op)
+				action.Finish(util.CopytoolBusy)
 			} else {
+				atomic.AddInt32(&atomicCurrentActionCount, 1)
 				queueAction(action)
 			}
 		}
