@@ -59,6 +59,7 @@ type (
 
 	azConfig struct {
 		NumThreads            int        `hcl:"num_threads"`
+		ActionQueueSize       int        `hcl:"action_queue_size"`
 		AzStorageAccountURL   string     `hcl:"az_storage_account_url"`
 		AzStorageKVURL        string     `hcl:"az_kv_url"`
 		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
@@ -213,6 +214,11 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.NumThreads = c.NumThreads
 	if other.NumThreads > 0 {
 		result.NumThreads = other.NumThreads
+	}
+
+	result.ActionQueueSize = c.ActionQueueSize
+	if other.ActionQueueSize > 0 {
+		result.ActionQueueSize = other.ActionQueueSize
 	}
 
 	result.Region = c.Region
@@ -459,6 +465,7 @@ func main() {
 			Mover:      AzMover(ac, getCredential(ac), uint32(ac.ID)),
 			NumThreads: cfg.NumThreads,
 			ArchiveID:  uint32(ac.ID),
+			ActionQueueSize: cfg.ActionQueueSize,
 		})
 	}
 

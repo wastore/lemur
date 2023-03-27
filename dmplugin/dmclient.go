@@ -44,6 +44,7 @@ type (
 		Mover      Mover
 		NumThreads int
 		ArchiveID  uint32
+		ActionQueueSize int
 	}
 
 	// Action is a data movement action
@@ -321,6 +322,22 @@ func (dm *DataMoverClient) Run(ctx context.Context) {
 	close(dm.status)
 }
 
+func (dm *DataMoverClient) defaultThreadCount() int {
+	if dm.config.NumThreads > 0 {
+		return dm.config.NumThreads
+	}
+	
+	return defaultNumThreads
+}
+
+func (dm *DataMoverClient) defaultQueueSize() int {
+	if dm.config.ActionQueueSize > 0 {
+		return dm.config.ActionQueueSize
+	}
+
+	return dm.defaultThreadCount() * 2
+}
+
 func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, error) {
 
 	handle, err := dm.rpcClient.Register(ctx, &pb.Endpoint{
@@ -335,12 +352,7 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 }
 
 func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
-	maxActionCount := defaultNumThreads * 2
-	if dm.config.NumThreads > 0 {
-		maxActionCount = dm.config.NumThreads * 2
-	}
-
-	actions := make(chan *dmAction, maxActionCount)
+	actions := make(chan *dmAction, dm.defaultQueueSize())
 	cancelAction := func(action *dmAction) {
 		// lookup in the map and cancel the context
 		cancel, ok := dm.cancelMap.Load(action.PrimaryPath())
@@ -458,8 +470,8 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 			debug.Printf("Retrying action %d.Trycount: %d. Error: %s", action.item.Id, action.item.TryCount, err.Error())
 			go func() { actions <- action }()
 		} else {
-			action.Finish(err)
 			dm.cancelMap.Delete(action.PrimaryPath()) // Delete from map
+			action.Finish(err)
 		}
 		
 		if err != nil {

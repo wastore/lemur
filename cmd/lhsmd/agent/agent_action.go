@@ -210,7 +210,6 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 			audit.Logf("id:%d completion failed: %v", status.Id, err)
 			return true, err // Completed, but Failed. Internal HSM state is not updated
 		}
-		<-action.agent.rpcsInFlight
 		if action.aih.Action() == llapi.HsmActionArchive && action.agent.config.Snapshots.Enabled && status.Uuid != "" {
 			createSnapshot(action.agent.Root(), action.aih.ArchiveID(), action.aih.Fid(), []byte(status.Uuid))
 		}
@@ -221,11 +220,9 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 		debug.Printf("id:%d progress update failed: %v", status.Id, err)
 		action.agent.stats.CompleteAction(action, -1)
 		if err2 := action.aih.End(0, 0, 0, -1); err2 != nil {
-			<-action.agent.rpcsInFlight
 			debug.Printf("id:%d completion after error failed: %v", status.Id, err2)
 			return false, fmt.Errorf("err: %s/err2: %s", err, err2)
 		}
-		<-action.agent.rpcsInFlight
 		return false, err // Incomplete Failed Action
 	}
 
@@ -240,7 +237,6 @@ func (action *Action) Fail(rc int) error {
 	if err != nil {
 		audit.Logf("id:%d fail after fail %x: %v", action.id, action.aih.Cookie(), err)
 	}
-	<-action.agent.rpcsInFlight
 	return errors.Wrap(err, "end action failed")
 
 }
