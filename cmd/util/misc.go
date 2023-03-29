@@ -58,6 +58,8 @@ func (e ErrorEx) Error() string {
 	return e.msg
 }
 
+var CopytoolBusy = ErrorEx{code: int32(syscall.EBUSY), msg: "Too many requests on copytool" }
+
 func ShouldRetry(err error) bool {
 	if stgErr, ok := err.(azblob.StorageError); ok {
 		if stgErr.Response().StatusCode == http.StatusForbidden {

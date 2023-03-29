@@ -48,7 +48,6 @@ type (
 		actionSource  hsm.ActionSource
 		monitor       *PluginMonitor
 		cancelFunc    context.CancelFunc
-		rpcsInFlight  chan struct{} // Buffered channel to throttle rpcs in flight
 		startComplete chan struct{} // Closed when agent startup is completed
 		stopComplete  chan struct{} // Closed when agent shutdown is completed
 	}
@@ -65,7 +64,6 @@ func New(cfg *Config, client fsroot.Client, as hsm.ActionSource) (*HsmAgent, err
 	ct := &HsmAgent{
 		config:        cfg,
 		client:        client,
-		rpcsInFlight:  make(chan struct{}, cfg.Processes*10),
 		stats:         NewActionStats(),
 		monitor:       NewMonitor(),
 		actionSource:  as,
@@ -173,7 +171,6 @@ func (ct *HsmAgent) handleActions(tag string) {
 			continue
 		}
 		action := ct.newAction(aih)
-		ct.rpcsInFlight <- struct{}{}
 		ct.stats.StartAction(action)
 		action.Prepare()
 		if e, ok := ct.Endpoints.Get(uint32(aih.ArchiveID())); ok {

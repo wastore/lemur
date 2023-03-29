@@ -24,7 +24,9 @@ import (
 
 type (
 	// ActionHandler is function that implements one of the commands
-	ActionHandler func(Action) error
+	ActionHandler func(context.Context, Action) error
+
+	actionFunc func()
 
 	// DataMoverClient is the data mover client to the HSM agent
 	DataMoverClient struct {
@@ -34,6 +36,7 @@ type (
 		mover     Mover
 		config    *Config
 		actions   map[pb.Command]ActionHandler
+		cancelMap sync.Map
 	}
 
 	// Config defines configuration for a DatamMoverClient
@@ -41,10 +44,12 @@ type (
 		Mover      Mover
 		NumThreads int
 		ArchiveID  uint32
+		ActionQueueSize int
 	}
 
 	// Action is a data movement action
 	dmAction struct {
+		ctx          context.Context
 		status       chan *pb.ActionStatus
 		item         *pb.ActionItem
 		actualLength *int64
@@ -101,23 +106,19 @@ type (
 	// Archiver defines an interface for data movers capable of
 	// fulfilling Archive requests
 	Archiver interface {
-		Archive(Action) error
+		Archive(context.Context, Action) error
 	}
 
 	// Restorer defines an interface for data movers capable of
 	// fulfilling Restore requests
 	Restorer interface {
-		Restore(Action) error
+		Restore(context.Context, Action) error
 	}
 
 	// Remover defines an interface for data movers capable of
 	// fulfilling Remove requests
 	Remover interface {
-		Remove(Action) error
-	}
-
-	Canceler interface {
-		Cancel(Action) error
+		Remove(context.Context, Action) error
 	}
 )
 
@@ -277,9 +278,6 @@ func NewMover(plugin *Plugin, cli pb.DataMoverClient, config *Config) *DataMover
 	if remover, ok := config.Mover.(Remover); ok {
 		actions[pb.Command_REMOVE] = remover.Remove
 	}
-	if canceler, ok := config.Mover.(Canceler); ok {
-		actions[pb.Command_CANCEL] = canceler.Cancel
-	}
 
 	return &DataMoverClient{
 		plugin:    plugin,
@@ -324,6 +322,22 @@ func (dm *DataMoverClient) Run(ctx context.Context) {
 	close(dm.status)
 }
 
+func (dm *DataMoverClient) defaultThreadCount() int {
+	if dm.config.NumThreads > 0 {
+		return dm.config.NumThreads
+	}
+	
+	return defaultNumThreads
+}
+
+func (dm *DataMoverClient) defaultQueueSize() int {
+	if dm.config.ActionQueueSize > 0 {
+		return dm.config.ActionQueueSize
+	}
+
+	return dm.defaultThreadCount() * 2
+}
+
 func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, error) {
 
 	handle, err := dm.rpcClient.Register(ctx, &pb.Endpoint{
@@ -337,8 +351,22 @@ func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, er
 	return handle, nil
 }
 
-func (dm *DataMoverClient) processActions(ctx context.Context) chan *pb.ActionItem {
-	actions := make(chan *pb.ActionItem)
+func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
+	actions := make(chan *dmAction, dm.defaultQueueSize())
+	cancelAction := func(action *dmAction) {
+		// lookup in the map and cancel the context
+		cancel, ok := dm.cancelMap.Load(action.PrimaryPath())
+		if !ok {
+			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
+			alert.Warnf(msg)
+			action.Finish(errors.New(msg))
+			return
+		}
+
+		alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.item.Id, action.item.PrimaryPath))
+		cancel.(context.CancelFunc)()
+		action.Finish(nil)
+	}
 
 	go func() {
 		defer close(actions)
@@ -353,7 +381,7 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *pb.ActionIt
 			return
 		}
 		for {
-			action, err := stream.Recv()
+			item, err := stream.Recv()
 			if err != nil {
 				if err == io.EOF {
 					debug.Print("Shutting down dmclient action stream")
@@ -364,8 +392,23 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *pb.ActionIt
 			}
 			// debug.Printf("Got message id:%d op: %v %v", action.Id, action.Op, action.PrimaryPath)
 
-			action.TryCount = 0 //first try
-			actions <- action
+			item.TryCount = 0 //first try
+			c, cancel := context.WithCancel(ctx)
+			action := &dmAction{ status: dm.status, item: item, ctx: c, }
+
+			if (item.Op == pb.Command_CANCEL) {
+				cancelAction(action)
+			} else {
+				/* if actions is full, we'll get to default clause */
+				select {
+				case actions <- action:
+					/* Safe to be done after sending because these values are handled only by this thread */
+					dm.cancelMap.Store(action.PrimaryPath(), cancel)
+				default:
+					alert.Warnf("Request limit reached. Failing action %s, command %d", action.PrimaryPath(), action.item.Op)
+					action.Finish(util.CopytoolBusy)
+				}
+			}
 		}
 
 	}()
@@ -408,13 +451,7 @@ func (dm *DataMoverClient) getActionHandler(op pb.Command) (ActionHandler, error
 	return fn, nil
 }
 
-func (dm *DataMoverClient) requeueItem(item *pb.ActionItem, actions chan *pb.ActionItem) {
-	item.TryCount += 1
-	debug.Printf("Retrying action %d.Trycount: %d", item.Id, item.TryCount)
-	actions <- item
-}
-
-func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
+func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 	maxTryCount := 3
 	if r := os.Getenv("COPYTOOL_RETRY_COUNT"); r != "" {
 		if v, err := strconv.Atoi(r); err == nil {
@@ -422,20 +459,18 @@ func (dm *DataMoverClient) handler(name string, actions chan *pb.ActionItem) {
 		}
 	}
 	
-	for item := range actions {
-		action := &dmAction{
-			status: dm.status,
-			item:   item,
-		}
-
-		actionFn, err := dm.getActionHandler(item.Op)
+	for action := range actions {
+		actionFn, err := dm.getActionHandler(action.item.Op)
 		if err == nil {
-			err = actionFn(action)
+			err = actionFn(action.ctx, action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
-		if util.ShouldRetry(err) && item.TryCount < int64(maxTryCount) {
-			go dm.requeueItem(item, actions)
+		if util.ShouldRetry(err) && action.item.TryCount < int64(maxTryCount) {
+			action.item.TryCount += 1
+			debug.Printf("Retrying action %d.Trycount: %d. Error: %s", action.item.Id, action.item.TryCount, err.Error())
+			go func() { actions <- action }()
 		} else {
+			dm.cancelMap.Delete(action.PrimaryPath()) // Delete from map
 			action.Finish(err)
 		}
 		
