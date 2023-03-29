@@ -369,7 +369,7 @@ func getCredential(ac *archiveConfig) azblob.Credential {
 func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
 	baseCfg := &azConfig{
 		Region:         "westeurope",
-		UploadPartSize: 8388608,
+		UploadPartSize: 67108864,
 	}
 
 	var cfg azConfig
