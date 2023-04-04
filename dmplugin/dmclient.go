@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -458,10 +459,23 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 			maxTryCount = v
 		}
 	}
-	
+
+	heartbeat := func(ctx context.Context, action *dmAction) {
+		ticker := time.NewTicker(5 * time.Minute)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				action.Update(0, 0, 0)
+			}
+		}
+	}
+
 	for action := range actions {
 		actionFn, err := dm.getActionHandler(action.item.Op)
 		if err == nil {
+			go heartbeat(action.ctx, action)
 			err = actionFn(action.ctx, action)
 		}
 		// debug.Printf("completed (action: %v) %v ", action, ret)
@@ -470,7 +484,9 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 			debug.Printf("Retrying action %d.Trycount: %d. Error: %s", action.item.Id, action.item.TryCount, err.Error())
 			go func() { actions <- action }()
 		} else {
-			dm.cancelMap.Delete(action.PrimaryPath()) // Delete from map
+			// Delete from map before we finish
+			cancel, _ := dm.cancelMap.LoadAndDelete(action.PrimaryPath())
+			cancel.(context.CancelFunc)()
 			action.Finish(err)
 		}
 		
