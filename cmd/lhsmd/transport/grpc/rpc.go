@@ -215,18 +215,17 @@ func (s *dmRPCServer) StatusStream(stream pb.DataMover_StatusStreamServer) error
 			continue
 		}
 
-		// Cancelled Op will update the status for Cancel action. Skip here.
-		if ok && action.Handle().Action() !=  llapi.HsmActionCancel {
-			_, err := action.Update(status)
-			if err != nil {
-				debug.Printf("Status update for 0x%x did not complete: %s", status.Id, err)
-				// send cancel to mover
-			}
+		_, err = action.Update(status)
+		if err != nil {
+			debug.Printf("Status update for 0x%x did not complete: %s", status.Id, err)
+			// send cancel to mover
 		}
 
-		ep.mu.Lock()
-		delete(ep.actions, agent.ActionID(status.Id))
-		ep.mu.Unlock()
+		if status.Completed {
+			ep.mu.Lock()
+			delete(ep.actions, agent.ActionID(status.Id))
+			ep.mu.Unlock()
+		}
 
 	}
 }

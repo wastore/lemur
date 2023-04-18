@@ -360,13 +360,13 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 		if !ok {
 			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
 			alert.Warnf(msg)
-			action.Finish(errors.New(msg))
+			// action.Finish() should not be performed for cancel
 			return
 		}
 
 		alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.item.Id, action.item.PrimaryPath))
 		cancel.(context.CancelFunc)()
-		action.Finish(nil)
+		// action.Finish() should not be performed for cancel
 	}
 
 	go func() {
