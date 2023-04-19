@@ -60,6 +60,7 @@ type (
 	azConfig struct {
 		NumThreads            int        `hcl:"num_threads"`
 		ActionQueueSize       int        `hcl:"action_queue_size"`
+		ProgressUpdateMinutes int        `hcl:"progress_update_minutes"`
 		AzStorageAccountURL   string     `hcl:"az_storage_account_url"`
 		AzStorageKVURL        string     `hcl:"az_kv_url"`
 		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
@@ -71,7 +72,6 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
-		HeartBeatInterval     int        `hcl:"heartbeat_interval"`
 
 		/* STE Parameters */
 		PlanDirectory string `hcl:"plan_dir"`
@@ -222,6 +222,11 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.ActionQueueSize = other.ActionQueueSize
 	}
 
+	result.ProgressUpdateMinutes = c.ProgressUpdateMinutes
+	if other.ProgressUpdateMinutes > 0 {
+		result.ProgressUpdateMinutes = other.ProgressUpdateMinutes
+	}
+
 	result.Region = c.Region
 	if other.Region != "" {
 		result.Region = other.Region
@@ -271,8 +276,6 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	if other.EventFIFOPath != "" {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
-
-	result.HeartBeatInterval = other.HeartBeatInterval
 
 	/* STE parameters */
 	result.CacheLimit = defaultSTEMemoryLimit
@@ -467,9 +470,9 @@ func main() {
 		plugin.AddMover(&dmplugin.Config{
 			Mover:      AzMover(ac, getCredential(ac), uint32(ac.ID)),
 			NumThreads: cfg.NumThreads,
-			HeartBeatInterval: time.Duration(cfg.HeartBeatInterval) * time.Minute,
 			ArchiveID:  uint32(ac.ID),
 			ActionQueueSize: cfg.ActionQueueSize,
+			ProgressUpdateMinutes: cfg.ProgressUpdateMinutes,
 		})
 	}
 

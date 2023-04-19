@@ -27,6 +27,13 @@ client_device = "required"
 # handler_count = 4
 
 ##
+## Number of minutes between sending updates to the Coordinator for a request.
+## Note that these are per-request, so bear in mind the potential for
+## performance overhead if this is set low and the maximum handlers is high.
+##
+# progress_update_minutes = 3
+
+##
 ## Enable expeimental snapshot feature.
 ##
 # snapshots {

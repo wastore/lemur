@@ -44,9 +44,9 @@ type (
 	Config struct {
 		Mover      Mover
 		NumThreads int
-		HeartBeatInterval time.Duration
 		ArchiveID  uint32
 		ActionQueueSize int
+		ProgressUpdateMinutes int
 	}
 
 	// Action is a data movement action
@@ -132,6 +132,10 @@ const (
 	defaultNumThreads = 4
 )
 
+const (
+	defaultProgressUpdateMinutes = 3
+)
+
 func withHandle(ctx context.Context, handle *pb.Handle) context.Context {
 	return context.WithValue(ctx, handleKey, handle)
 }
@@ -151,10 +155,6 @@ func (a *dmAction) Update(offset, length, max int64) error {
 		Id:     a.item.Id,
 		Offset: offset,
 		Length: length,
-		Completed: false,
-		Uuid: a.uuid,
-		Hash: a.hash,
-		Url: a.url,
 	}
 	return nil
 }
@@ -332,7 +332,7 @@ func (dm *DataMoverClient) defaultThreadCount() int {
 	if dm.config.NumThreads > 0 {
 		return dm.config.NumThreads
 	}
-	
+
 	return defaultNumThreads
 }
 
@@ -342,6 +342,14 @@ func (dm *DataMoverClient) defaultQueueSize() int {
 	}
 
 	return dm.defaultThreadCount() * 2
+}
+
+func (dm *DataMoverClient) defaultUpdateMinutes() int {
+	if dm.config.ProgressUpdateMinutes > 0 {
+		return dm.config.ProgressUpdateMinutes
+	}
+
+	return defaultProgressUpdateMinutes
 }
 
 func (dm *DataMoverClient) registerEndpoint(ctx context.Context) (*pb.Handle, error) {
@@ -365,15 +373,13 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 		if !ok {
 			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
 			alert.Warnf(msg)
-			// action.Finish() should not be performed for cancel. Coordinatior does not expect a Finish
-			// here. Instead the archive/restore op would respond the coordinator with ECANCELED
+			action.Finish(errors.New(msg))
 			return
 		}
 
 		alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.item.Id, action.item.PrimaryPath))
 		cancel.(context.CancelFunc)()
-		// action.Finish() should not be performed for cancel. Coordinatior does not expect a Finish
-		// here. Instead the archive/restore op would respond the coordinator with ECANCELED
+		action.Finish(nil)
 	}
 
 	go func() {
@@ -468,10 +474,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 	}
 
 	heartbeat := func(ctx context.Context, action *dmAction) {
-		if dm.config.HeartBeatInterval == 0  {
-			return
-		}
-		ticker := time.NewTicker(dm.config.HeartBeatInterval)
+		ticker := time.NewTicker(time.Duration(dm.defaultUpdateMinutes()) * time.Minute)
 		for {
 			select {
 			case <-ctx.Done():
@@ -499,7 +502,7 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 			cancel.(context.CancelFunc)()
 			action.Finish(err)
 		}
-		
+
 		if err != nil {
 			err = errors.New(util.NewAzCopyLogSanitizer().SanitizeLogMessage(err.Error()))
 		}
