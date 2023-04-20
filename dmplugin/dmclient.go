@@ -44,6 +44,7 @@ type (
 	Config struct {
 		Mover      Mover
 		NumThreads int
+		HeartBeatInterval time.Duration
 		ArchiveID  uint32
 		ActionQueueSize int
 	}
@@ -150,6 +151,10 @@ func (a *dmAction) Update(offset, length, max int64) error {
 		Id:     a.item.Id,
 		Offset: offset,
 		Length: length,
+		Completed: false,
+		Uuid: a.uuid,
+		Hash: a.hash,
+		Url: a.url,
 	}
 	return nil
 }
@@ -463,7 +468,10 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 	}
 
 	heartbeat := func(ctx context.Context, action *dmAction) {
-		ticker := time.NewTicker(5 * time.Minute)
+		if dm.config.HeartBeatInterval == 0  {
+			return
+		}
+		ticker := time.NewTicker(dm.config.HeartBeatInterval)
 		for {
 			select {
 			case <-ctx.Done():

@@ -71,6 +71,7 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
+		HeartBeatInterval     int        `hcl:"heartbeat_interval"`
 
 		/* STE Parameters */
 		PlanDirectory string `hcl:"plan_dir"`
@@ -271,6 +272,8 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
 
+	result.HeartBeatInterval = other.HeartBeatInterval
+
 	/* STE parameters */
 	result.CacheLimit = defaultSTEMemoryLimit
 	if other.CacheLimit != 0 {
@@ -464,6 +467,7 @@ func main() {
 		plugin.AddMover(&dmplugin.Config{
 			Mover:      AzMover(ac, getCredential(ac), uint32(ac.ID)),
 			NumThreads: cfg.NumThreads,
+			HeartBeatInterval: time.Duration(cfg.HeartBeatInterval) * time.Minute,
 			ArchiveID:  uint32(ac.ID),
 			ActionQueueSize: cfg.ActionQueueSize,
 		})

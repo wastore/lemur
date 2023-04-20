@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/wastore/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent"
 	pb "github.com/wastore/lemur/pdm"
 	"golang.org/x/net/context"
