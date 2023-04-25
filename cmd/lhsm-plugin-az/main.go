@@ -60,6 +60,7 @@ type (
 	azConfig struct {
 		NumThreads            int        `hcl:"num_threads"`
 		ActionQueueSize       int        `hcl:"action_queue_size"`
+		ProgressUpdateMinutes int        `hcl:"progress_update_minutes"`
 		AzStorageAccountURL   string     `hcl:"az_storage_account_url"`
 		AzStorageKVURL        string     `hcl:"az_kv_url"`
 		AzStorageKVSecretName string     `hcl:"az_kv_secret_name"`
@@ -219,6 +220,11 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result.ActionQueueSize = c.ActionQueueSize
 	if other.ActionQueueSize > 0 {
 		result.ActionQueueSize = other.ActionQueueSize
+	}
+
+	result.ProgressUpdateMinutes = c.ProgressUpdateMinutes
+	if other.ProgressUpdateMinutes > 0 {
+		result.ProgressUpdateMinutes = other.ProgressUpdateMinutes
 	}
 
 	result.Region = c.Region
@@ -466,6 +472,7 @@ func main() {
 			NumThreads: cfg.NumThreads,
 			ArchiveID:  uint32(ac.ID),
 			ActionQueueSize: cfg.ActionQueueSize,
+			ProgressUpdateMinutes: cfg.ProgressUpdateMinutes,
 		})
 	}
 
