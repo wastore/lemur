@@ -373,13 +373,19 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 		if !ok {
 			msg := fmt.Sprintf("Received cancel for a non-existent action: %s", action.item.PrimaryPath)
 			alert.Warnf(msg)
+			// If we receive a cancel action for something non-existent, we must let the CDT know.  Otherwise a CANCEL action
+			// will remain in the actions queue indefinitely.
 			action.Finish(errors.New(msg))
 			return
 		}
 
 		alert.Writer().Log(fmt.Sprintf("id:%d Cancel %s", action.item.Id, action.item.PrimaryPath))
 		cancel.(context.CancelFunc)()
-		action.Finish(nil)
+		// Do not call action.Finish.  The action being canceled will call Finish with an error indicating cancelation.
+		// In the case of hsm_cancel, there will exist a CANCEL action in the action queue with an identical cookie to the
+		// action being canceled.  The response by the original request being canceled will result in the termination of
+		// both since they share a cookie.  In the case of cancel_archives (really a purge of ARCHIVE requests), there is no
+		// twin sibling action in the actions queue, but the net-effect is the same.
 	}
 
 	go func() {
