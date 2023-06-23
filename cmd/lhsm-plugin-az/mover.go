@@ -265,7 +265,7 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 		action.PrimaryPath(),
 		m.config.Container, fileKey))
 	} else {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
+		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
 		time.Since(start),
 		action.PrimaryPath()))
 	}
@@ -344,7 +344,6 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Restored %d bytes in %v to %s", m.name, action.ID(), contentLen,
 		time.Since(start),
 		action.PrimaryPath()))
-
 	}
 
 	action.SetActualLength(contentLen)
