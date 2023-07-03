@@ -71,6 +71,9 @@ func ShouldRetry(err error) bool {
 		if errEx.ErrorCode() == http.StatusForbidden {
 			return true
 		}
+		if errEx.ErrorCode() == int32(syscall.EIO) {
+			return true
+		}
 	}
 
 	return false
@@ -358,6 +361,10 @@ func Upload(ctx context.Context, filePath string, blobPath string, blockSize int
 		FileTransfers:        order.Transfers.FileTransferCount,
 		FolderTransfer:       order.Transfers.FolderTransferCount})
 	part, _ := jobMgr.JobPartMgr(common.PartNumber(p))
+	part, found := jobMgr.JobPartMgr(common.PartNumber(p))
+	if !found {
+		return ErrorEx{code: int32(syscall.EIO), msg: "Unexpectedly unable to find job part -- will retry."}
+	}
 
 	canceled := false
 	select {
