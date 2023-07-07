@@ -37,10 +37,9 @@ type Mover struct {
 }
 
 // AzMover returns a new *Mover
-func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mover {
+func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
 	return &Mover{
 		name:                fmt.Sprintf("az-%d", archiveID),
-		cred:                creds,
 		config:              cfg,
 		httpClient: 		 &http.Client{
 			Transport: &http.Transport{
