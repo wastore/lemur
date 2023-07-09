@@ -13,7 +13,7 @@ import (
 )
 
 type RemoveOptions struct {
-	ContainerURL  container.Client
+	ContainerURL  *container.Client
 	ResourceSAS   string
 	BlobName      string
 	ExportPrefix  string

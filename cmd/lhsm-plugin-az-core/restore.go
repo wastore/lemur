@@ -14,12 +14,11 @@ import (
 )
 
 type RestoreOptions struct {
-	ContainerURL    container.Client
+	ContainerURL    *container.Client
 	BlobName        string
 	DestinationPath string
 	BlockSize       int64
 	ExportPrefix    string
-	Pacer           util.Pacer
 	HTTPClient      *http.Client
 	OpStartTime     time.Time
 }
@@ -28,7 +27,7 @@ var maxRetryPerDownloadBody = 5
 
 //Restore persists a blob to the local filesystem
 func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64, error) {
-	blob := o.ContainerURL.NewBlockBlobClient(o.BlobName)
+	b := o.ContainerURL.NewBlockBlobClient(o.BlobName)
 
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("Restoring %s to %s.", o.BlobName, o.DestinationPath))
@@ -36,7 +35,7 @@ func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64
 		util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring blob to %s.", o.DestinationPath))
 	}
 
-	size, err := copier.DownloadFile(ctx, blob, o.DestinationPath, &blob.DownloadFileOptions{})
+	size, err := copier.DownloadFile(ctx, b, o.DestinationPath, &blob.DownloadFileOptions{BlockSize: o.BlockSize})
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Restore failed: %v", err))
 		return 0, err

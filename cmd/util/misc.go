@@ -23,7 +23,6 @@ package util
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -32,12 +31,24 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-storage-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
 	"golang.org/x/sys/unix"
 )
 
+var authFailureError = []bloberror.Code {
+	bloberror.AuthenticationFailed,
+	bloberror.AuthorizationFailure,
+	bloberror.AuthorizationPermissionMismatch,
+	bloberror.AuthorizationProtocolMismatch,
+	bloberror.AuthorizationResourceTypeMismatch,
+	bloberror.AuthorizationServiceMismatch,
+	bloberror.AuthorizationSourceIPMismatch,
+	bloberror.InsufficientAccountPermissions,
+	bloberror.InvalidAuthenticationInfo,
+	bloberror.UnauthorizedBlobOverwrite,
+}
 
 type ErrorEx struct {
 	code int32
@@ -55,35 +66,11 @@ func (e ErrorEx) Error() string {
 var CopytoolBusy = ErrorEx{code: int32(syscall.EBUSY), msg: "Too many requests on copytool" }
 
 func ShouldRetry(err error) bool {
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == http.StatusForbidden {
-			return true
-		}
-	}
-
-	if errEx, ok := err.(ErrorEx); ok {
-		if errEx.ErrorCode() == http.StatusForbidden {
-			return true
-		}
-	}
-
-	return false
+	return bloberror.HasCode(err, authFailureError...)
 }
 
 func ShouldRefreshCreds(err error) bool {
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		if stgErr.Response().StatusCode == http.StatusForbidden {
-			return true
-		}
-	}
-
-	if errEx, ok := err.(ErrorEx); ok {
-		if errEx.ErrorCode() == http.StatusForbidden {
-			return true
-		}
-	}
-
-	return false
+	return bloberror.HasCode(err, authFailureError...)
 }
 
 //GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
@@ -157,9 +144,7 @@ func UnixError(err error) (ret int32) {
 		ret = int32(0)
 	}
 
-	if stgErr, ok := err.(azblob.StorageError); ok {
-		ret =  int32(stgErr.Response().StatusCode)
-	} else if errEx, ok := err.(ErrorEx); ok {
+	if errEx, ok := err.(ErrorEx); ok {
 		ret = errEx.ErrorCode()
 	} else {
 		ret = int32(syscall.EINVAL)

@@ -19,7 +19,7 @@ import (
 )
 
 type ArchiveOptions struct {
-	ContainerURL  container.Client
+	ContainerURL  *container.Client
 	ResourceSAS   string
 	MountRoot     string
 	BlobName      string

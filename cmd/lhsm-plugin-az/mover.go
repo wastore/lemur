@@ -251,7 +251,7 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	total, err := core.Archive(ctx, m.copier, core.ArchiveOptions{
-		ContainerURL: *cURL,
+		ContainerURL: cURL,
 		ResourceSAS:  sas,
 		MountRoot:    m.config.MountRoot,
 		BlobName:     fileKey,
@@ -322,7 +322,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
-		ContainerURL:    *cURL,
+		ContainerURL:    cURL,
 		BlobName:        srcObj,
 		DestinationPath: action.WritePath(),
 		BlockSize:       m.config.UploadPartSize,
@@ -381,7 +381,7 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	err = core.Remove(ctx, core.RemoveOptions{
-		ContainerURL: *cURL,
+		ContainerURL: cURL,
 		BlobName:     srcObj,
 		ExportPrefix: m.config.ExportPrefix,
 	})
