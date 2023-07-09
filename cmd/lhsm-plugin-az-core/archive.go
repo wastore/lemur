@@ -1,12 +1,9 @@
 package lhsm_plugin_az_core
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"fmt"
+    "fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -15,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	copier "github.com/nakulkar-msft/copier/core"

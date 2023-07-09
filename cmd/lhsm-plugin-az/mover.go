@@ -17,7 +17,7 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
-	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/wastore/go-lustre"
 	"github.com/wastore/go-lustre/fs"
 	"github.com/wastore/go-lustre/status"
@@ -29,7 +29,6 @@ import (
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
 	name       string
-	cred       azblob.Credential
 	httpClient *http.Client
 	config     *archiveConfig
 	copier     copier.Copier
@@ -48,10 +47,10 @@ func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
 	cachelimit := 4 * 1024 * MiB // defaults 4 GiB
 
 	if cfg.Bandwidth != 0 { // this value is in MB
-		throughputBytesPerSec = int64(a.Bandwidth) * MiB
+		throughputBytesPerSec = int64(cfg.Bandwidth) * MiB
 	}
 	if cfg.CacheLimit != 0 { // This value is in GB
-		cachelimit = int64(a.Bandwidth) * 1024 * MiB
+		cachelimit = int64(cfg.CacheLimit) * 1024 * MiB
 	}
 
 	copier := copier.NewCopier(throughputBytesPerSec, int64(maxBlockLength), cachelimit, defaultConcurrency)
@@ -215,14 +214,6 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 	rate.Mark(1)
 	start := time.Now()
 
-	var pacer util.Pacer
-	/* start pacer if required */
-	if m.config.Bandwidth != 0 {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwidth %d\n", m.config.Bandwidth))
-		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
-		defer pacer.Close()
-	}
-
 	// translate the fid into an actual path first
 	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
 	fid, err := lustre.ParseFid(fidStr)
@@ -253,15 +244,19 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 		return err
 	}
 
-	total, err := core.Archive(ctx, core.ArchiveOptions{
-		ContainerURL: m.config.ContainerURL(),
+	c := m.config.ContainerURL() + "?" + sas
+	cURL, err := container.NewClientWithNoCredential(c, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to get container client")
+	}
+
+	total, err := core.Archive(ctx, m.copier, core.ArchiveOptions{
+		ContainerURL: *cURL,
 		ResourceSAS:  sas,
 		MountRoot:    m.config.MountRoot,
 		BlobName:     fileKey,
 		SourcePath:   action.PrimaryPath(),
-		Parallelism:  uint16(m.config.NumThreads),
 		BlockSize:    m.config.UploadPartSize,
-		Pacer:        pacer,
 		ExportPrefix: m.config.ExportPrefix,
 		HTTPClient:   m.httpClient,
 		OpStartTime:  opStartTime,
@@ -287,11 +282,8 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 			action.PrimaryPath()))
 	}
 
-	u := url.URL{
-		Scheme: "az",
-		Host:   m.config.ContainerURL().Host,
-		Path:   m.config.ContainerURL().Path,
-	}
+	u, _ := url.Parse(m.config.ContainerURL())
+	u.Scheme = "az"
 
 	action.SetUUID(fileID)
 	action.SetURL(u.String())
@@ -308,14 +300,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	}
 	rate.Mark(1)
 
-	var pacer util.Pacer
-
 	start := time.Now()
-	if m.config.Bandwidth != 0 {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwith %d MBPS\n", m.config.Bandwidth))
-		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
-		defer pacer.Close()
-	}
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
@@ -330,16 +315,18 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 		return err
 	}
 
-	contentLen, err := core.Restore(ctx, core.RestoreOptions{
-		ContainerURL:    m.config.ContainerURL(),
-		ResourceSAS:     sas,
+	c := m.config.ContainerURL() + "?" + sas
+	cURL, err := container.NewClientWithNoCredential(c, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to get container client")
+	}
+
+	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
+		ContainerURL:    *cURL,
 		BlobName:        srcObj,
-		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
-		Parallelism:     uint16(m.config.NumThreads),
 		BlockSize:       m.config.UploadPartSize,
 		ExportPrefix:    m.config.ExportPrefix,
-		Pacer:           pacer,
 		HTTPClient:      m.httpClient,
 	})
 
@@ -387,12 +374,16 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 		return err
 	}
 
+	c := m.config.ContainerURL() + "?" + sas
+	cURL, err := container.NewClientWithNoCredential(c, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to get container client")
+	}
+
 	err = core.Remove(ctx, core.RemoveOptions{
-		ContainerURL: m.config.ContainerURL(),
-		ResourceSAS:  sas,
+		ContainerURL: *cURL,
 		BlobName:     srcObj,
 		ExportPrefix: m.config.ExportPrefix,
-		Credential:   m.cred,
 	})
 
 	if util.ShouldRefreshCreds(err) {

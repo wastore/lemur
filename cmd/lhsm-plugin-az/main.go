@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/dustin/go-humanize"
-	copier "github.com/nakulkar-msft/copier/core"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 
@@ -45,7 +43,7 @@ type (
 		MountRoot             string   `hcl:"mountroot"`
 		ExportPrefix          string   `hcl:"exportprefix"`
 		CredRefreshInterval   string   `hcl:"cred_refresh_interval"`
-		containerURL          *url.URL /* Container Blob Endpoint URL */
+		containerURL          string /* Container Blob Endpoint URL */
 		CacheLimit            int      `hcl:"cache_limit"`
 		LogLevel              string   `hcl:"log_level"`
 	}
@@ -85,7 +83,7 @@ func (a *archiveConfig) String() string {
 	return fmt.Sprintf("%d:%s:%s:%s/%s", a.ID, a.Endpoint, a.Region, a.Container, a.Prefix)
 }
 
-func (a *archiveConfig) ContainerURL() *url.URL {
+func (a *archiveConfig) ContainerURL() string {
 	return a.containerURL
 }
 
@@ -145,7 +143,7 @@ func (a *archiveConfig) setContainerURL() error {
 	}
 	u.Path = path.Join(u.Path, a.Container)
 	u.RawQuery = a.AzStorageSAS
-	a.containerURL = u
+	a.containerURL = u.String()
 
 	return nil
 }
@@ -194,7 +192,6 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result := new(azConfig)
 	const defaultSTEMemoryLimit = 2 /* In GiBs */
-	defaultSTETempDir := path.Join(os.TempDir(), "copytool")
 
 	result.UploadPartSize = c.UploadPartSize
 	if other.UploadPartSize > 0 {
@@ -266,7 +263,6 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
 
-	/* STE parameters */
 	result.CacheLimit = defaultSTEMemoryLimit
 	if other.CacheLimit != 0 {
 		result.CacheLimit = other.CacheLimit
@@ -278,23 +274,6 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 	}
 
 	return result
-}
-
-func (a *azConfig) initCopyEngine() {
-	const MiB = int64(1024 * 1024)
-	throughputBytesPerSec := int64(0)
-	maxBlockLength := blockblob.MaxStageBlockBytes
-	defaultConcurrency := 32
-	cachelimit := 4 * 1024 * MiB // defaults 4 GiB
-
-	if a.Bandwidth != 0 { // this value is in MB
-		throughputBytesPerSec = int64(a.Bandwidth) * MiB
-	}
-	if a.CacheLimit != 0 { // This value is in GB
-		cachelimit = int64(a.Bandwidth) * 1024 * MiB
-	}
-
-	a.copier = copier.NewCopier(throughputBytesPerSec, int64(maxBlockLength), cachelimit, defaultConcurrency)
 }
 
 func init() {
@@ -360,8 +339,6 @@ func main() {
 	if len(cfg.Archives) == 0 {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
 	}
-
-	cfg.initCopyEngine()
 
 	rc, err := llapi.RegisterErrorCB(cfg.EventFIFOPath)
 	if rc != 0 || err != nil {

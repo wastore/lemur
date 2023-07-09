@@ -3,7 +3,6 @@ package lhsm_plugin_az_core
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"path"
 	"time"
 
