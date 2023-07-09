@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -119,7 +118,7 @@ func main() {
     
     pager := container.NewListBlobsFlatPager(nil)
     for pager.More() {
-	resp, err := pager.NextPage(context.TODO())
+	resp, err := pager.NextPage(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

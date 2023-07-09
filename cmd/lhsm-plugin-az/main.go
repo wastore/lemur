@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"math"
 	"net/url"
 	"os"
 	"os/signal"
@@ -15,7 +13,7 @@ import (
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/dustin/go-humanize"
-	"github.com/nakulkar-msft/copier/core"
+	copier "github.com/nakulkar-msft/copier/core"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 
@@ -41,13 +39,15 @@ type (
 		Region                string
 		Container             string
 		Prefix                string
-		UploadPartSize        int64       `hcl:"upload_part_size"`
-		NumThreads            int         `hcl:"num_threads"`
-		Bandwidth             int         `hcl:"bandwidth"`
-		MountRoot             string      `hcl:"mountroot"`
-		ExportPrefix          string      `hcl:"exportprefix"`
-		CredRefreshInterval   string      `hcl:"cred_refresh_interval"`
-		containerURL          *url.URL    /* Container Blob Endpoint URL */
+		UploadPartSize        int64    `hcl:"upload_part_size"`
+		NumThreads            int      `hcl:"num_threads"`
+		Bandwidth             int      `hcl:"bandwidth"`
+		MountRoot             string   `hcl:"mountroot"`
+		ExportPrefix          string   `hcl:"exportprefix"`
+		CredRefreshInterval   string   `hcl:"cred_refresh_interval"`
+		containerURL          *url.URL /* Container Blob Endpoint URL */
+		CacheLimit            int      `hcl:"cache_limit"`
+		LogLevel              string   `hcl:"log_level"`
 	}
 
 	archiveSet []*archiveConfig
@@ -67,12 +67,8 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
-
-		/* STE Parameters */
-		PlanDirectory string `hcl:"plan_dir"`
-		CacheLimit    int    `hcl:"cache_limit"`
-		LogLevel      string `hcl:"log_level"`
-		copier		      copier.Copier
+		CacheLimit            int        `hcl:"cache_limit"`
+		LogLevel              string     `hcl:"log_level"`
 	}
 )
 
@@ -281,11 +277,6 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.LogLevel = other.LogLevel
 	}
 
-	result.PlanDirectory = defaultSTETempDir
-	if other.PlanDirectory != "" {
-		result.PlanDirectory = other.PlanDirectory
-	}
-
 	return result
 }
 
@@ -305,7 +296,6 @@ func (a *azConfig) initCopyEngine() {
 
 	a.copier = copier.NewCopier(throughputBytesPerSec, int64(maxBlockLength), cachelimit, defaultConcurrency)
 }
-
 
 func init() {
 	rate = metrics.NewMeter()

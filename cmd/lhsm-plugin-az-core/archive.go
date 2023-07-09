@@ -3,6 +3,7 @@ package lhsm_plugin_az_core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,46 +15,31 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	copier "github.com/nakulkar-msft/copier/core"
 	"github.com/wastore/lemur/cmd/util"
 )
 
 type ArchiveOptions struct {
-	ContainerURL  *url.URL
+	ContainerURL  container.Client
 	ResourceSAS   string
 	MountRoot     string
 	BlobName      string
 	SourcePath    string
-	Credential    azblob.Credential
-	Parallelism   uint16
 	BlockSize     int64
-	Pacer         util.Pacer
 	ExportPrefix  string
 	HTTPClient    *http.Client
 	OpStartTime   time.Time
 }
 
-func blobURLToDFSURL(u url.URL) url.URL {
-	u.Host = strings.Replace(u.Host, ".blob", ".dfs", 1)
-	return u
-}
+func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFileOptions, error) {
+    var meta map[string]*string
 
-const parallelDirCount = 64 // Number parallel dir metadata uploads
-
-func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, err error) {
-	filepath := path.Join(o.MountRoot, blobPath)
-	blobPath = path.Join(o.ExportPrefix, blobPath)
-
-	p := util.NewPipeline(ctx, o.Credential, o.Pacer, azblob.PipelineOptions{HTTPSender: util.HTTPClientFactory(o.HTTPClient)})
-	containerURL := azblob.NewContainerURL(*o.ContainerURL, p)
-	blobURL := containerURL.NewBlockBlobURL(blobPath)
-	meta := azblob.Metadata{}
-
-	//Get owner, group and perms
-	fileInfo, err := os.Stat(filepath)
+    fileInfo, err := os.Stat(filepath)
 	if err != nil {
-		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to get fileInfo: %s", filepath, err.Error()))
-		return 0, err
+		return nil, err
 	}
 
 	owner := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Uid)
@@ -64,62 +50,72 @@ func upload(ctx context.Context, o ArchiveOptions, blobPath string) (_ int64, er
 	group := fmt.Sprintf("%d", fileInfo.Sys().(*syscall.Stat_t).Gid)
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 
-	meta["permissions"] = fmt.Sprintf("%04o", permissions)
-	meta["modtime"] = modTime
-	meta["owner"] = owner
-	meta["group"] = group
+	permissionsString := fmt.Sprintf("%04o", permissions)
+	
+	meta["permissions"] = &permissionsString
+	meta["modtime"] = &modTime
+	meta["owner"] = &owner
+	meta["group"] = &group
 
 	if fileInfo.IsDir() {
-		meta["hdi_isfolder"] = "true"
-		_, err = blobURL.Upload(ctx, bytes.NewReader(nil), azblob.BlobHTTPHeaders{}, meta, azblob.BlobAccessConditions{}, azblob.AccessTierNone, nil, azblob.ClientProvidedKeyOptions{}, azblob.ImmutabilityPolicyOptions{})
-	} else {	
-		err = util.Upload(ctx, filepath, blobURL.String(), o.BlockSize, meta)
+		t := "true"
+		meta["hdi_isfolder"] = &t
 	}
 
-	if err != nil {
-		util.Log(pipeline.LogError, fmt.Sprintf("Archiving %s. Failed to upload blob: %s", blobPath, err.Error()))
-		return 0, err
-	}
-
-	return fileInfo.Size(), err
+    return &blockblob.UploadFileOptions{
+        BlockSize: a.BlockSize,
+        Metadata: meta,
+    }, nil
 }
 
 //Archive copies local file to HNS
-func Archive(ctx context.Context, o ArchiveOptions) (size int64, err error) {
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Archiving %s", o.BlobName))
-	} else {
-		util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", o.SourcePath))
-	}
-	wg := sync.WaitGroup{}
+func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64, error) {
+    logPath := o.SourcePath //hide paths till debug mode
+    if util.ShouldLog(pipeline.LogDebug) {
+        logPath = o.BlobName
+    }
+	
+    util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving ", logPath))
+    wg := sync.WaitGroup{}
 
 	parents := strings.Split(o.BlobName, string(os.PathSeparator))
 	parents = parents[:len(parents)-1] // Exclude the file itself (processed separately)
-	wg.Add(len(parents) + 1)           // Parent directories + 1 for the file.
+	wg.Add(len(parents))           // Parent directories + 1 for the file.
 
-	// Upload the file
-	go func() {
-		size, err = upload(ctx, o, o.BlobName)
-		wg.Done()
-	}()
-
-	//parallely upload directories starting from root.
-	guard := make(chan struct{}, parallelDirCount) //Guard maintains bounded paralleism for uploading directories
-	defer close(guard)
-
-	blobPath := ""
+    filepath := o.MountRoot
+    blobpath := o.ExportPrefix
 	for _, currDir := range parents {
-		blobPath = path.Join(blobPath, currDir) //keep appending path to the url
+		filepath = path.Join(filepath, currDir) //keep appending path to the url
+        blobpath = path.Join(blobpath, currDir)
+        
+		go func(filepath, blobpath string) {
+            defer wg.Done()
+            options, err := o.getUploadOptions(filepath)
+            if err != nil {
+                util.Log(pipeline.LogError, fmt.Sprintf("Archiving Dir %v: Failed %v", logPath, err))
+                return
+            }
 
-		guard <- struct{}{} //block till we've enough room.
-		go func(p string) {
-			upload(ctx, o, p)
-			<-guard //release a space in guard.
-			wg.Done()
-		}(blobPath)
+            blob := o.ContainerURL.NewBlockBlobClient(blobpath)
+            _, err = blob.UploadBuffer(ctx, nil, options)
+		}(filepath, blobpath)
 	}
 
-	wg.Wait()
+	filepath = path.Join(o.MountRoot, o.BlobName)
+	blobpath = path.Join(o.ExportPrefix, o.BlobName)
+    blob := o.ContainerURL.NewBlockBlobClient(blobpath)
 
-	return size, err
+    options, err := o.getUploadOptions(filepath)
+    if err != nil {
+        return 0, err
+    }
+
+    err = copier.UploadFile(ctx, blob, filepath, options)
+    
+    if err != nil {
+        util.Log(pipeline.LogError, fmt.Sprintf("Archiving file %v: Failed %v", logPath, err))
+        return 0, err
+    }
+
+	return 0, err
 }
