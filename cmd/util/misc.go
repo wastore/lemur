@@ -22,7 +22,9 @@ package util
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -31,13 +33,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
 	"golang.org/x/sys/unix"
 )
 
-var authFailureError = []bloberror.Code {
+var authFailureError = []bloberror.Code{
 	bloberror.AuthenticationFailed,
 	bloberror.AuthorizationFailure,
 	bloberror.AuthorizationPermissionMismatch,
@@ -63,18 +66,26 @@ func (e ErrorEx) Error() string {
 	return e.msg
 }
 
-var CopytoolBusy = ErrorEx{code: int32(syscall.EBUSY), msg: "Too many requests on copytool" }
+var CopytoolBusy = ErrorEx{code: int32(syscall.EBUSY), msg: "Too many requests on copytool"}
 
 func ShouldRetry(err error) bool {
-	return bloberror.HasCode(err, authFailureError...)
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	return (respErr.StatusCode == http.StatusForbidden)
 }
 
 func ShouldRefreshCreds(err error) bool {
-	return bloberror.HasCode(err, authFailureError...)
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	return (respErr.StatusCode == http.StatusForbidden)
 }
 
-//GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
-//Uses MSI auth to login
+// GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
+// Uses MSI auth to login
 func GetKVSecret(kvURL, kvSecretName string) (secret string, err error) {
 	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
 	if err != nil {
@@ -105,14 +116,14 @@ func IsSASValid(sas string) (ok bool, reason string) {
 
 	q, _ := url.ParseQuery(sas)
 	if q.Get("sig") == "" {
-		return false,"Missing signature"
+		return false, "Missing signature"
 	}
 	if endTime := q.Get("se"); endTime == "" {
-		return false,"Missing endTime"
+		return false, "Missing endTime"
 	} else {
 		t, err := time.Parse(time.RFC3339, endTime)
 		if err != nil {
-			return false,"Invalid expiry time on SAS."+err.Error()
+			return false, "Invalid expiry time on SAS." + err.Error()
 		}
 		if t.Before(time.Now()) {
 			return false, "Expired SAS returned"
@@ -121,7 +132,7 @@ func IsSASValid(sas string) (ok bool, reason string) {
 
 	if v := os.Getenv("COPYTOOL_IGNORE_SAS_PERMISSIONS"); v != "" {
 		ignore, err := strconv.ParseBool(v)
-		if err == nil && ignore{
+		if err == nil && ignore {
 			return true, ""
 		}
 	}
@@ -150,7 +161,7 @@ func UnixError(err error) (ret int32) {
 		ret = int32(syscall.EINVAL)
 	}
 
-    // Return 1 (EPERM 1 Operation not permitted) for all non-standard UNIX ERRNOs
+	// Return 1 (EPERM 1 Operation not permitted) for all non-standard UNIX ERRNOs
 	errno_name := unix.ErrnoName(syscall.Errno(ret))
 	msg := fmt.Sprintf("For error %v, returned status %d", err, ret)
 	if errno_name == "" {

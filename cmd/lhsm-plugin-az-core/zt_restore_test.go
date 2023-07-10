@@ -2,6 +2,7 @@ package lhsm_plugin_az_core
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	copier := copier.NewCopier(0, maxBlockLength, defaultCachelimit, defaultConcurrency)
 	bsu := getBSU()
 	containerURL, _ := createNewContainer(c, bsu)
+	fmt.Println(containerURL.URL())
 	defer containerURL.Delete(context.TODO(), nil)
 	blobName := generateBlobName()
 

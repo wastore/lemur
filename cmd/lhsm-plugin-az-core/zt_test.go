@@ -116,11 +116,22 @@ func generateBlobName() string {
 	return generateName(blobPrefix, 0)
 }
 
-func getContainerURL(c *chk.C, bsu *service.Client) (container *container.Client, name string) {
+func getContainerURL(c *chk.C, bsu *service.Client) (ctr *container.Client, name string) {
 	name = generateContainerName()
-	container = bsu.NewContainerClient(name)
+	startTime := time.Now().Add(-2 * time.Minute)
 
-	return container, name
+	ctrURL, err := bsu.NewContainerClient(name).GetSASURL(sas.ContainerPermissions{Read: true, Write: true, Create: true, Execute: true}, 
+		time.Now().Add(time.Hour),
+		&container.GetSASURLOptions{StartTime: &startTime})
+	if err != nil {
+		panic(err)
+	}
+
+	ctr, err = container.NewClientWithNoCredential(ctrURL, nil)
+	if err != nil {
+		panic(err)
+	}
+	return ctr, name
 }
 
 func getBlockBlobURL(c *chk.C, container *container.Client, prefix string) (blob *blockblob.Client, name string) {
@@ -159,21 +170,13 @@ func getBSU() *service.Client {
 		panic(err)
 	}
 
-	p := sas.BlobPermissions{Read: true, Create: true, Write: true, Tag: true, Add: true}
-	sasQueryParams, err := sas.BlobSignatureValues{
-		Protocol:    sas.ProtocolHTTPS,
-		StartTime:   time.Now().UTC(),
-		ExpiryTime:  time.Now().UTC().Add(2 * time.Hour),
-		Permissions: (&p).String(),
-	}.SignWithSharedKey(cred)
-
-	u := fmt.Sprintf("https://%s.blob.core.windows.net/?%s", sasQueryParams.Encode())
+	u := fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 
 	if err != nil {
 		panic(err)
 	}
 
-	s, err := service.NewClientWithNoCredential(u, nil)
+	s, err := service.NewClientWithSharedKeyCredential(u, cred, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -181,12 +184,12 @@ func getBSU() *service.Client {
 	return s
 }
 
-func createNewContainer(c *chk.C, bsu *service.Client) (container *container.Client, name string) {
-	container, name = getContainerURL(c, bsu)
+func createNewContainer(c *chk.C, bsu *service.Client) (ctr *container.Client, name string) {
+	ctr, name = getContainerURL(c, bsu)
 
-	_, err := container.Create(ctx, nil)
+	_, err := bsu.CreateContainer(context.TODO(), name, nil)
 	c.Assert(err, chk.IsNil)
-	return container, name
+	return ctr, name
 }
 
 func createNewBlockBlob(c *chk.C, container *container.Client, prefix string) (blob *blockblob.Client, name string) {
