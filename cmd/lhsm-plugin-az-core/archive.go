@@ -71,7 +71,7 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
         logPath = o.BlobName
     }
 	
-    util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving ", logPath))
+    util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", logPath))
     wg := sync.WaitGroup{}
 
 	parents := strings.Split(o.BlobName, string(os.PathSeparator))

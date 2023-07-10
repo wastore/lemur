@@ -28,10 +28,11 @@ import (
 
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
-	name       string
-	httpClient *http.Client
-	config     *archiveConfig
-	copier     copier.Copier
+	name          string
+	httpClient    *http.Client
+	config        *archiveConfig
+	copier        copier.Copier
+	clientOptions *container.ClientOptions
 
 	//*Channels to interact wtih SAS Manager
 	getSAS          chan chan string
@@ -55,22 +56,25 @@ func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
 
 	copier := copier.NewCopier(throughputBytesPerSec, int64(maxBlockLength), cachelimit, defaultConcurrency)
 
-	return &Mover{
-		name:   fmt.Sprintf("az-%d", archiveID),
-		copier: copier,
-		config: cfg,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:           0, // No limit
-				MaxIdleConnsPerHost:    cfg.NumThreads,
-				IdleConnTimeout:        180 * time.Second,
-				TLSHandshakeTimeout:    10 * time.Second,
-				ExpectContinueTimeout:  1 * time.Second,
-				DisableKeepAlives:      false,
-				DisableCompression:     true,
-				MaxResponseHeaderBytes: 0,
-			},
+	clientOptions := &container.ClientOptions{}
+	clientOptions.Transport = &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:           0, // No limit
+			MaxIdleConnsPerHost:    cfg.NumThreads,
+			IdleConnTimeout:        180 * time.Second,
+			TLSHandshakeTimeout:    10 * time.Second,
+			ExpectContinueTimeout:  1 * time.Second,
+			DisableKeepAlives:      false,
+			DisableCompression:     true,
+			MaxResponseHeaderBytes: 0,
 		},
+	}
+
+	return &Mover{
+		name:            fmt.Sprintf("az-%d", archiveID),
+		copier:          copier,
+		config:          cfg,
+		clientOptions:   clientOptions,
 		getSAS:          make(chan chan string),
 		forceSASRefresh: make(chan time.Time),
 	}
@@ -92,7 +96,7 @@ func (m *Mover) Start() {
 }
 
 func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
-	var container, path string
+	var containerName, path string
 
 	u, err := url.ParseRequestURI(fileID)
 	if err == nil {
@@ -100,12 +104,12 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 			return "", "", errors.Errorf("invalid URL in file_id %s", fileID)
 		}
 		path = u.Path[1:]
-		container = u.Host
+		containerName = u.Host
 	} else {
 		path = m.destination(fileID)
-		container = m.config.Container
+		containerName = m.config.Container
 	}
-	return container, path, nil
+	return containerName, path, nil
 }
 
 // getSASToken will block till a valid sas is returned or timeout after a minute
@@ -245,7 +249,7 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	c := m.config.ContainerURL() + "?" + sas
-	cURL, err := container.NewClientWithNoCredential(c, nil)
+	cURL, err := container.NewClientWithNoCredential(c, m.clientOptions)
 	if err != nil {
 		return errors.Wrap(err, "failed to get container client")
 	}
@@ -316,7 +320,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	c := m.config.ContainerURL() + "?" + sas
-	cURL, err := container.NewClientWithNoCredential(c, nil)
+	cURL, err := container.NewClientWithNoCredential(c, m.clientOptions)
 	if err != nil {
 		return errors.Wrap(err, "failed to get container client")
 	}
@@ -375,7 +379,7 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	c := m.config.ContainerURL() + "?" + sas
-	cURL, err := container.NewClientWithNoCredential(c, nil)
+	cURL, err := container.NewClientWithNoCredential(c, m.clientOptions)
 	if err != nil {
 		return errors.Wrap(err, "failed to get container client")
 	}
