@@ -26,9 +26,9 @@ func (s *cmdIntegrationSuite) TestRestoreSmallBlob(c *chk.C) {
 func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	copier := copier.NewCopier(0, maxBlockLength, defaultCachelimit, defaultConcurrency)
 	bsu := getBSU()
-	containerURL, _ := createNewContainer(c, bsu)
+	containerURL, cName := createNewContainer(c, bsu)
 	fmt.Println(containerURL.URL())
-	defer containerURL.Delete(context.TODO(), nil)
+	defer bsu.DeleteContainer(context.TODO(), cName, nil)
 	blobName := generateBlobName()
 
 	blobURL := containerURL.NewBlockBlobClient(blobName)
@@ -48,14 +48,14 @@ func performRestoreTest(c *chk.C, fileSize, blockSize, parallelism int) {
 	util.InitJobLogger(pipeline.LogDebug)
 
 	count, err := Restore(context.TODO(), copier,
-	RestoreOptions{
-		ContainerURL: containerURL,
-		BlobName:        blobName,
-		DestinationPath: destination,
-		BlockSize:       int64(blockSize),
-		HTTPClient: &http.Client{},
-		OpStartTime: time.Now(),
-	})
+		RestoreOptions{
+			ContainerURL:    containerURL,
+			BlobName:        blobName,
+			DestinationPath: destination,
+			BlockSize:       int64(blockSize),
+			HTTPClient:      &http.Client{},
+			OpStartTime:     time.Now(),
+		})
 
 	// make sure we got the right info back
 	c.Assert(err, chk.IsNil)

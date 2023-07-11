@@ -2,7 +2,7 @@ package lhsm_plugin_az_core
 
 import (
 	"context"
-    "fmt"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -19,21 +19,21 @@ import (
 )
 
 type ArchiveOptions struct {
-	ContainerURL  *container.Client
-	ResourceSAS   string
-	MountRoot     string
-	BlobName      string
-	SourcePath    string
-	BlockSize     int64
-	ExportPrefix  string
-	HTTPClient    *http.Client
-	OpStartTime   time.Time
+	ContainerURL *container.Client
+	ResourceSAS  string
+	MountRoot    string
+	BlobName     string
+	SourcePath   string
+	BlockSize    int64
+	ExportPrefix string
+	HTTPClient   *http.Client
+	OpStartTime  time.Time
 }
 
 func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFileOptions, error) {
-    var meta map[string]*string
+	meta := make(map[string]*string)
 
-    fileInfo, err := os.Stat(filepath)
+	fileInfo, err := os.Stat(filepath)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFil
 	modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05 -0700")
 
 	permissionsString := fmt.Sprintf("%04o", permissions)
-	
+
 	meta["permissions"] = &permissionsString
 	meta["modtime"] = &modTime
 	meta["owner"] = &owner
@@ -58,60 +58,67 @@ func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFil
 		meta["hdi_isfolder"] = &t
 	}
 
-    return &blockblob.UploadFileOptions{
-        BlockSize: a.BlockSize,
-        Metadata: meta,
-    }, nil
+	return &blockblob.UploadFileOptions{
+		BlockSize: a.BlockSize,
+		Metadata:  meta,
+	}, nil
 }
 
-//Archive copies local file to HNS
+// Archive copies local file to HNS
 func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64, error) {
-    logPath := o.SourcePath //hide paths till debug mode
-    if util.ShouldLog(pipeline.LogDebug) {
-        logPath = o.BlobName
-    }
-	
-    util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", logPath))
-    wg := sync.WaitGroup{}
+	logPath := o.SourcePath //hide paths till debug mode
+	if util.ShouldLog(pipeline.LogDebug) {
+		logPath = o.BlobName
+	}
+
+	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", logPath))
+	wg := sync.WaitGroup{}
 
 	parents := strings.Split(o.BlobName, string(os.PathSeparator))
 	parents = parents[:len(parents)-1] // Exclude the file itself (processed separately)
-	wg.Add(len(parents))           // Parent directories + 1 for the file.
+	wg.Add(len(parents))               // Parent directories + 1 for the file.
 
-    filepath := o.MountRoot
-    blobpath := o.ExportPrefix
+	filepath := o.MountRoot
+	blobpath := o.ExportPrefix
 	for _, currDir := range parents {
 		filepath = path.Join(filepath, currDir) //keep appending path to the url
-        blobpath = path.Join(blobpath, currDir)
-        
-		go func(filepath, blobpath string) {
-            defer wg.Done()
-            options, err := o.getUploadOptions(filepath)
-            if err != nil {
-                util.Log(pipeline.LogError, fmt.Sprintf("Archiving Dir %v: Failed %v", logPath, err))
-                return
-            }
+		blobpath = path.Join(blobpath, currDir)
 
-            blob := o.ContainerURL.NewBlockBlobClient(blobpath)
-            _, err = blob.UploadBuffer(ctx, nil, options)
+		go func(filepath, blobpath string) {
+			defer wg.Done()
+			options, err := o.getUploadOptions(filepath)
+			if err != nil {
+				util.Log(pipeline.LogError, fmt.Sprintf("Archiving Dir %v: Failed %v", logPath, err))
+				return
+			}
+
+			blob := o.ContainerURL.NewBlockBlobClient(blobpath)
+			_, err = blob.UploadBuffer(ctx, nil, options)
 		}(filepath, blobpath)
 	}
 
 	filepath = path.Join(o.MountRoot, o.BlobName)
 	blobpath = path.Join(o.ExportPrefix, o.BlobName)
-    blob := o.ContainerURL.NewBlockBlobClient(blobpath)
+	blob := o.ContainerURL.NewBlockBlobClient(blobpath)
 
-    options, err := o.getUploadOptions(filepath)
-    if err != nil {
-        return 0, err
-    }
+	options, err := o.getUploadOptions(filepath)
+	if err != nil {
+		return 0, err
+	}
 
-    err = copier.UploadFile(ctx, blob, filepath, options)
-    
-    if err != nil {
-        util.Log(pipeline.LogError, fmt.Sprintf("Archiving file %v: Failed %v", logPath, err))
-        return 0, err
-    }
+	err = copier.UploadFile(ctx, blob, filepath, options)
 
-	return 0, err
+	if err != nil {
+		util.Log(pipeline.LogError, fmt.Sprintf("Archiving file %v: Failed %v", logPath, err))
+		return 0, err
+	}
+
+	props, err := blob.GetProperties(ctx, nil)
+	if err != nil {
+		util.Log(pipeline.LogError,
+				 fmt.Sprintf("Archiving file %v: Could not get destination length %s",
+				 logPath, err))
+	}
+
+	return *props.ContentLength, err
 }

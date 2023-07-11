@@ -39,7 +39,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
-	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
 const (
@@ -213,17 +212,6 @@ func createNewDirectoryStub(c *chk.C, container *container.Client, dirPath strin
 	return
 }
 
-func deleteContainer(c *chk.C, container azblob.ContainerURL) {
-	resp, err := container.Delete(ctx, azblob.ContainerAccessConditions{})
-	c.Assert(err, chk.IsNil)
-	c.Assert(resp.StatusCode(), chk.Equals, 202)
-}
-
-func validateStorageError(c *chk.C, err error, code azblob.ServiceCodeType) {
-	serr, _ := err.(azblob.StorageError)
-	c.Assert(serr.ServiceCode(), chk.Equals, code)
-}
-
 func getRelativeTimeGMT(amount time.Duration) time.Time {
 	currentTime := time.Now().In(time.FixedZone("GMT", 0))
 	currentTime = currentTime.Add(amount * time.Second)
@@ -234,21 +222,6 @@ func generateCurrentTimeWithModerateResolution() time.Time {
 	highResolutionTime := time.Now().UTC()
 	return time.Date(highResolutionTime.Year(), highResolutionTime.Month(), highResolutionTime.Day(), highResolutionTime.Hour(), highResolutionTime.Minute(),
 		highResolutionTime.Second(), 0, highResolutionTime.Location())
-}
-
-func cleanBlobAccount(c *chk.C, serviceURL azblob.ServiceURL) {
-	marker := azblob.Marker{}
-	for marker.NotDone() {
-		resp, err := serviceURL.ListContainersSegment(ctx, marker, azblob.ListContainersSegmentOptions{})
-		c.Assert(err, chk.IsNil)
-
-		for _, v := range resp.ContainerItems {
-			_, err = serviceURL.NewContainerURL(v.Name).Delete(ctx, azblob.ContainerAccessConditions{})
-			c.Assert(err, chk.IsNil)
-		}
-
-		marker = resp.NextMarker
-	}
 }
 
 type stringContainsChecker struct {
