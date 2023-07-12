@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -58,9 +59,20 @@ func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFil
 		meta["hdi_isfolder"] = &t
 	}
 
+	totalProgress := int64(0)
+	var lock sync.Mutex
+	progressFunc := func(bytesTransferred int64) {
+		lock.Lock()
+		defer lock.Unlock()
+
+		t := atomic.AddInt64(&totalProgress, bytesTransferred)
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Archiving %v: Progress %d/%d, %d %% complete",
+				 filepath, t, fileInfo.Size(), (float64(t)/float64(fileInfo.Size()) * 100.0)))
+	}
 	return &blockblob.UploadFileOptions{
 		BlockSize: a.BlockSize,
 		Metadata:  meta,
+		Progress: progressFunc,
 	}, nil
 }
 

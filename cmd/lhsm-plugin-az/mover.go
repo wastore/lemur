@@ -69,7 +69,6 @@ func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
 			MaxResponseHeaderBytes: 0,
 		},
 	}
-	clientOptions.APIVersion = "2020-10-02"
 
 	return &Mover{
 		name:            fmt.Sprintf("az-%d", archiveID),

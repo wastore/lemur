@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	copier "github.com/nakulkar-msft/copier/core"
 	"github.com/wastore/lemur/cmd/util"
 )
@@ -34,6 +37,23 @@ func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64
 	} else {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring blob to %s.", o.DestinationPath))
 	}
+
+	stat, err := os.Stat(o.DestinationPath)
+	if err != nil {
+		return 0, err
+	}
+
+	totalProgres := int64(0)
+	var lock sync.Mutex
+	progressFunc := func(bytesTransferred int64) {
+		lock.Lock()
+		defer lock.Unlock()
+
+		t := atomic.AddInt64(&totalProgres, bytesTransferred)
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Restoring %v, Progress %d/%d, %d %% complete",
+				 o.DestinationPath, t, stat.Size(), (float64(t)/float64(stat.Size()) * 100.0)))
+	}
+
 
 	size, err := copier.DownloadFile(ctx, b, o.DestinationPath, &blob.DownloadFileOptions{BlockSize: o.BlockSize})
 	if err != nil {

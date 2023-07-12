@@ -199,6 +199,8 @@ github.com/mschoch/smat v0.0.0-20160514031455-90eadee771ae/go.mod h1:qAyveg+e4CE
 github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
 github.com/nakulkar-msft/copier v0.0.0-20230711110152-83d65059ad69 h1:Jc402fhskkxrIzVd3eLm6vx01P3tMPB2RYHpCSebaUI=
 github.com/nakulkar-msft/copier v0.0.0-20230711110152-83d65059ad69/go.mod h1:CdAJnvVgsN1uQDmIWfquY6VSRbcTRU+6tmXwJVvyubA=
+github.com/nakulkar-msft/copier v0.0.0-20230712112115-717a50eed269 h1:yRw6tjqrIqToH33zaejeyusPPrA1r7ruNNLybTORCvI=
+github.com/nakulkar-msft/copier v0.0.0-20230712112115-717a50eed269/go.mod h1:CdAJnvVgsN1uQDmIWfquY6VSRbcTRU+6tmXwJVvyubA=
 github.com/opentracing/opentracing-go v1.0.2/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.0.3-0.20180606204148-bd9c31933947/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/paulbellamy/ratecounter v0.2.0/go.mod h1:Hfx1hDpSGoqxkVVpBi/IlYD7kChlfo5C6hzIHwPqfFE=
