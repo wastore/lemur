@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
-    "syscall"
+	"syscall"
 	"time"
 
-    "github.com/wastore/go-lustre/hsm"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/wastore/go-lustre/hsm"
 	"github.com/wastore/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
-	"github.com/Azure/azure-storage-blob-go/azblob"
 )
 
 // Construct a FileInfo compatible struct.
@@ -65,113 +65,112 @@ func main() {
 	if err != nil {
 		log.Fatal("Invalid credentials with error: " + err.Error())
 	}
-	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
 
-	URL, _ := url.Parse(
-		fmt.Sprintf("https://%s.blob.core.windows.net/%s?include=metadata", accountName, containerName))
+	url := fmt.Sprintf("https://%s.blob.core.windows.net/%s?include=metadata", accountName, containerName)
 
 	// Create a ContainerURL object that wraps the container URL and a request
 	// pipeline to make requests.
-	containerURL := azblob.NewContainerURL(*URL, p)
+	container, err := container.NewClientWithSharedKeyCredential(url, credential, &container.ClientOptions{})
+	if err != nil {
+		log.Fatal("Could not create container client")
+	}
 	ctx := context.Background()
 
 	dirs := make(map[string]bool)
 
     const MAX = 256
     sem := make(chan int, MAX)
-
     var wg sync.WaitGroup
 
-	for marker := (azblob.Marker{}); marker.NotDone(); {
-		// Get a result segment starting with the blob indicated by the current Marker.
-		listBlob, err := containerURL.ListBlobsFlatSegment(ctx, marker, azblob.ListBlobsSegmentOptions{})
-		if err != nil {
-			log.Fatal(err)
-		}
+    importHSM := func(containerName string, name string, uid uint32, gid uint32, perm uint32, sz int64, sec int64, nsec int64) {
+	defer wg.Done()
 
-		// ListBlobs returns the start of the next segment; you MUST use this to get
-		// the next segment (after processing the current result segment).
-		marker = listBlob.NextMarker
+	fi := &myFileInfo{}
+	fi.name = name
 
-		// Process the blobs returned in this result segment (if the segment is empty, the loop body won't execute)
-		for _, blobInfo := range listBlob.Segment.BlobItems {
-			dir := filepath.Dir(blobInfo.Name)
-			if dir != "." {
-				if _, ok := dirs[dir]; !ok {
-					dirs[dir] = true
-                    os.MkdirAll(dir, 0777)
-					//fmt.Printf("mkdir -p %s\n", dir)
-				}
-			}
+	stat := &fi.stat
+	stat.Uid = uid
+	stat.Gid = gid
+	stat.Mode = perm
+	stat.Size = sz
+	stat.Atim.Sec = sec
+	stat.Atim.Nsec = nsec
+	stat.Mtim.Sec = sec
+	stat.Mtim.Nsec = nsec
 
-			uid := uint32(1000)
-			if val, ok := blobInfo.Metadata["uid"]; ok {
-				val2, err := strconv.ParseUint(val, 10, 32)
-				if err == nil {
-					uid = uint32(val2)
-				}
-			}
-			gid := uint32(1000)
-			if val, ok := blobInfo.Metadata["gid"]; ok {
-				val2, err := strconv.ParseUint(val, 10, 32)
-				if err == nil {
-					gid = uint32(val2)
-				}
-			}
-			perm := uint32(420)
-			if val, ok := blobInfo.Metadata["perm"]; ok {
-				val2, err := strconv.ParseUint(val, 8, 32)
-				if err == nil {
-					perm = uint32(val2)
-				}
-			}
-			modtime := time.Now()
-			if val, ok := blobInfo.Metadata["modtime"]; ok {
-				val2, err := time.Parse("2006-01-02 15:04:05 -0700", val)
-				if err == nil {
-					modtime = val2
-				}
-			}
+	layout := llapi.DefaultDataLayout()
+	//layout.StripeCount = 1
+	//layout.StripeSize = 1 << 20
+	//layout.PoolName = ""
 
-            sem <- 1
-            wg.Add(1)
-            go func(containerName string, name string, uid uint32, gid uint32, perm uint32, sz int64, sec int64, nsec int64) {
-                defer wg.Done()
+	archive := uint(1)
 
-                fi := &myFileInfo{}
-                fi.name = name
-
-                stat := &fi.stat
-                stat.Uid = uid
-                stat.Gid = gid
-                stat.Mode = perm
-                stat.Size = sz
-                stat.Atim.Sec = sec
-                stat.Atim.Nsec = nsec
-                stat.Mtim.Sec = sec
-                stat.Mtim.Nsec = nsec
-
-                layout := llapi.DefaultDataLayout()
-                //layout.StripeCount = 1
-                //layout.StripeSize = 1 << 20
-                //layout.PoolName = ""
-
-                archive := uint(1)
-
-                _, err = hsm.Import(name, archive, fi, layout)
-                if err != nil {
-                    log.Fatal(err)
-                }
-
-                uuid := fmt.Sprintf("az://%s/%s", containerName, name)
-                fileid.UUID.Set(name, []byte(uuid))
-
-                <-sem
-            }(containerName, blobInfo.Name, uid, gid, perm, *blobInfo.Properties.ContentLength, int64(modtime.Unix()), int64(modtime.Nanosecond()))
-
-
-
-		}
+	_, err = hsm.Import(name, archive, fi, layout)
+	if err != nil {
+	    log.Fatal(err)
 	}
+
+	uuid := fmt.Sprintf("az://%s/%s", containerName, name)
+	fileid.UUID.Set(name, []byte(uuid))
+
+	<-sem
+    }
+    
+    pager := container.NewListBlobsFlatPager(nil)
+    for pager.More() {
+	resp, err := pager.NextPage(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, blobInfo := range resp.Segment.BlobItems {
+		dir := filepath.Dir(*blobInfo.Name)
+		if dir != "." {
+			if _, ok := dirs[dir]; !ok {
+				dirs[dir] = true
+				os.MkdirAll(dir, 0777)
+				//fmt.Printf("mkdir -p %s\n", dir)
+			}
+		}
+		uid := uint32(1000)
+		if val, ok := blobInfo.Metadata["uid"]; ok {
+			val2, err := strconv.ParseUint(*val, 10, 32)
+			if err == nil {
+				uid = uint32(val2)
+			}
+		}
+		gid := uint32(1000)
+		if val, ok := blobInfo.Metadata["gid"]; ok {
+			val2, err := strconv.ParseUint(*val, 10, 32)
+			if err == nil {
+				gid = uint32(val2)
+			}
+		}
+		perm := uint32(420)
+		if val, ok := blobInfo.Metadata["perm"]; ok {
+			val2, err := strconv.ParseUint(*val, 8, 32)
+			if err == nil {
+				perm = uint32(val2)
+			}
+		}
+		modtime := time.Now()
+		if val, ok := blobInfo.Metadata["modtime"]; ok {
+			val2, err := time.Parse("2006-01-02 15:04:05 -0700", *val)
+			if err == nil {
+				modtime = val2
+			}
+		}
+
+		sem <- 1
+		wg.Add(1)
+		importHSM(containerName,
+			  *blobInfo.Name,
+			  uid, gid, perm,
+			  *blobInfo.Properties.ContentLength,
+			  int64(modtime.Unix()),
+			  int64(modtime.Nanosecond()))
+	}
+    }
+
     wg.Wait()
 }

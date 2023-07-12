@@ -1,23 +1,16 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"math"
 	"net/url"
 	"os"
 	"os/signal"
 	"path"
-	rdbg "runtime/debug"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-storage-azcopy/v10/common"
-	"github.com/Azure/azure-storage-azcopy/v10/ste"
-	"github.com/Azure/azure-storage-blob-go/azblob"
-
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
@@ -35,24 +28,24 @@ type (
 	archiveConfig struct {
 		Name                  string `hcl:",key"`
 		ID                    int
-		AzStorageAccountURL   string `hcl:"az_storage_account_url"`
-		AzStorageKVURL        string `hcl:"az_kv_url"`
-		AzStorageKVSecretName string `hcl:"az_kv_secret_name"`
-		AzStorageSAS          string `json:"-"`
-		SASContext            time.Time  `json:"-"` //Context is used by operations to know if they've latest SAS
+		AzStorageAccountURL   string    `hcl:"az_storage_account_url"`
+		AzStorageKVURL        string    `hcl:"az_kv_url"`
+		AzStorageKVSecretName string    `hcl:"az_kv_secret_name"`
+		AzStorageSAS          string    `json:"-"`
+		SASContext            time.Time `json:"-"` //Context is used by operations to know if they've latest SAS
 		Endpoint              string
 		Region                string
 		Container             string
 		Prefix                string
-		UploadPartSize        int64  `hcl:"upload_part_size"`
-		NumThreads            int    `hcl:"num_threads"`
-		Bandwidth             int    `hcl:"bandwidth"`
-		MountRoot             string `hcl:"mountroot"`
-		ExportPrefix          string `hcl:"exportprefix"`
-		CredRefreshInterval   string `hcl:"cred_refresh_interval"`
-		azCreds               azblob.Credential
-		jobMgr                ste.IJobMgr `json:"-"`
-		containerURL          *url.URL /* Container Blob Endpoint URL */
+		UploadPartSize        int64    `hcl:"upload_part_size"`
+		NumThreads            int      `hcl:"num_threads"`
+		Bandwidth             int      `hcl:"bandwidth"`
+		MountRoot             string   `hcl:"mountroot"`
+		ExportPrefix          string   `hcl:"exportprefix"`
+		CredRefreshInterval   string   `hcl:"cred_refresh_interval"`
+		containerURL          string /* Container Blob Endpoint URL */
+		CacheLimit            int      `hcl:"cache_limit"`
+		LogLevel              string   `hcl:"log_level"`
 	}
 
 	archiveSet []*archiveConfig
@@ -72,12 +65,8 @@ type (
 		MountRoot             string     `hcl:"mountroot"`
 		ExportPrefix          string     `hcl:"exportprefix"`
 		EventFIFOPath         string     `hcl:"event_fifo_path"`
-
-		/* STE Parameters */
-		PlanDirectory string `hcl:"plan_dir"`
-		CacheLimit    int    `hcl:"cache_limit"`
-		LogLevel      string `hcl:"log_level"`
-		jobMgr        ste.IJobMgr
+		CacheLimit            int        `hcl:"cache_limit"`
+		LogLevel              string     `hcl:"log_level"`
 	}
 )
 
@@ -94,10 +83,9 @@ func (a *archiveConfig) String() string {
 	return fmt.Sprintf("%d:%s:%s:%s/%s", a.ID, a.Endpoint, a.Region, a.Container, a.Prefix)
 }
 
-func (a *archiveConfig) ContainerURL() *url.URL {
+func (a *archiveConfig) ContainerURL() string {
 	return a.containerURL
 }
-
 
 func (a *archiveConfig) checkValid() error {
 	var errors []string
@@ -148,14 +136,14 @@ func (a *archiveConfig) checkAzAccess() (err error) {
 	return nil
 }
 
-func (a *archiveConfig) setContainerURL() (error) {
+func (a *archiveConfig) setContainerURL() error {
 	u, err := url.Parse(a.AzStorageAccountURL)
-	if (err != nil) {
+	if err != nil {
 		return err
 	}
 	u.Path = path.Join(u.Path, a.Container)
 	u.RawQuery = a.AzStorageSAS
-	a.containerURL = u
+	a.containerURL = u.String()
 
 	return nil
 }
@@ -191,7 +179,6 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 	}
 
 	// If these were set on a per-archive basis, override the defaults.
-	a.azCreds = azblob.NewAnonymousCredential()
 	a.Bandwidth = g.Bandwidth
 	a.MountRoot = g.MountRoot
 	a.ExportPrefix = g.ExportPrefix
@@ -205,7 +192,6 @@ func (a *archiveConfig) mergeGlobals(g *azConfig) {
 func (c *azConfig) Merge(other *azConfig) *azConfig {
 	result := new(azConfig)
 	const defaultSTEMemoryLimit = 2 /* In GiBs */
-	defaultSTETempDir := path.Join(os.TempDir(), "copytool")
 
 	result.UploadPartSize = c.UploadPartSize
 	if other.UploadPartSize > 0 {
@@ -277,72 +263,17 @@ func (c *azConfig) Merge(other *azConfig) *azConfig {
 		result.EventFIFOPath = other.EventFIFOPath
 	}
 
-	/* STE parameters */
 	result.CacheLimit = defaultSTEMemoryLimit
 	if other.CacheLimit != 0 {
 		result.CacheLimit = other.CacheLimit
 	}
-	
+
 	result.LogLevel = c.LogLevel
 	if other.LogLevel != "" {
 		result.LogLevel = other.LogLevel
 	}
-	
-	result.PlanDirectory = defaultSTETempDir
-	if other.PlanDirectory != "" {
-		result.PlanDirectory = other.PlanDirectory
-	}
-	
+
 	return result
-}
-
-func (a *azConfig) initSTE() (err error) {
-	jobID := common.NewJobID()
-	tuner := ste.NullConcurrencyTuner{FixedValue: 128}
-	var pacer ste.PacerAdmin = ste.NewNullAutoPacer()
-	var logLevel common.LogLevel
-	common.AzcopyJobPlanFolder = a.PlanDirectory
-
-	if err := logLevel.Parse(a.LogLevel); err != nil {
-		logLevel = common.ELogLevel.Info()
-	}
-	logger := common.NewSysLogger(jobID, logLevel, "lhsm-plugin-az")
-	logger.OpenLog()
-
-	os.MkdirAll(common.AzcopyJobPlanFolder, 0666)
-	if a.Bandwidth != 0 {
-		pacer = ste.NewTokenBucketPacer(int64(a.Bandwidth*1024*1024), 0)
-	}
-
-	a.jobMgr = ste.NewJobMgr(ste.NewConcurrencySettings(math.MaxInt32, false),
-		jobID,
-		context.Background(),
-		common.NewNullCpuMonitor(),
-		common.ELogLevel.Error(),
-		"Lustre",
-		a.PlanDirectory,
-		&tuner,
-		pacer,
-		common.NewMultiSizeSlicePool(4*1024*1024*1024 /* 4GiG */),
-		common.NewCacheLimiter(int64(a.CacheLimit*1024*1024*1024)),
-		common.NewCacheLimiter(int64(64)),
-		logger,
-		true)
-
-	/*
-	 This needs to be moved to a better location
-	*/
-	go func() {
-		time.Sleep(20 * time.Second) // wait a little, so that our initial pool of buffers can get allocated without heaps of (unnecessary) GC activity
-		rdbg.SetGCPercent(20)        // activate more aggressive/frequent GC than the default
-	}()
-
-	util.SetJobMgr(a.jobMgr)
-	util.ResetPartNum()
-	common.GetLifecycleMgr().E2EEnableAwaitAllowOpenFiles(false)
-	common.GetLifecycleMgr().SetForceLogging()
-
-	return nil
 }
 
 func init() {
@@ -366,10 +297,6 @@ func init() {
 		}
 	}()
 	// }
-}
-
-func getCredential(ac *archiveConfig) azblob.Credential {
-	return ac.azCreds
 }
 
 func getMergedConfig(plugin *dmplugin.Plugin) (*azConfig, error) {
@@ -413,10 +340,6 @@ func main() {
 		alert.Abort(errors.New("Invalid configuration: No archives defined"))
 	}
 
-	if err = cfg.initSTE(); err != nil {
-		alert.Abort(errors.Wrap(err, "Failed to initialize STE"))
-	}
-
 	rc, err := llapi.RegisterErrorCB(cfg.EventFIFOPath)
 	if rc != 0 || err != nil {
 		alert.Abort(errors.Wrap(err, "registering HSM event FIFO (plugin)"))
@@ -424,20 +347,20 @@ func main() {
 	defer llapi.UnregisterErrorCB(cfg.EventFIFOPath)
 
 	switch cfg.LogLevel {
-		case "none":
-			minimumLevelToLog = pipeline.LogNone
-		case "fatal":
-			minimumLevelToLog = pipeline.LogFatal
-		case "panic":
-			minimumLevelToLog = pipeline.LogPanic
-		case "error":
-			minimumLevelToLog = pipeline.LogError
-		case "warning":
-			minimumLevelToLog = pipeline.LogWarning
-		case "info":
-			minimumLevelToLog = pipeline.LogInfo
-		default:
-			minimumLevelToLog = pipeline.LogDebug
+	case "none":
+		minimumLevelToLog = pipeline.LogNone
+	case "fatal":
+		minimumLevelToLog = pipeline.LogFatal
+	case "panic":
+		minimumLevelToLog = pipeline.LogPanic
+	case "error":
+		minimumLevelToLog = pipeline.LogError
+	case "warning":
+		minimumLevelToLog = pipeline.LogWarning
+	case "info":
+		minimumLevelToLog = pipeline.LogInfo
+	default:
+		minimumLevelToLog = pipeline.LogDebug
 	}
 	util.InitJobLogger(minimumLevelToLog)
 
@@ -468,10 +391,10 @@ func main() {
 
 	for _, ac := range cfg.Archives {
 		plugin.AddMover(&dmplugin.Config{
-			Mover:      AzMover(ac, getCredential(ac), uint32(ac.ID)),
-			NumThreads: cfg.NumThreads,
-			ArchiveID:  uint32(ac.ID),
-			ActionQueueSize: cfg.ActionQueueSize,
+			Mover:                 AzMover(ac, uint32(ac.ID)),
+			NumThreads:            cfg.NumThreads,
+			ArchiveID:             uint32(ac.ID),
+			ActionQueueSize:       cfg.ActionQueueSize,
 			ProgressUpdateMinutes: cfg.ProgressUpdateMinutes,
 		})
 	}

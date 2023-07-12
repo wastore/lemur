@@ -93,7 +93,9 @@ func (jl *jobLogger) Log(loglevel pipeline.LogLevel, msg string) {
 }
 
 func Log(logLevel pipeline.LogLevel, msg string) {
-	globalLogger.Log(logLevel, msg)
+	if ShouldLog(logLevel) {
+		globalLogger.Log(logLevel, msg)
+	}
 }
 
 func ShouldLog(level pipeline.LogLevel) bool {

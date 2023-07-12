@@ -9,13 +9,15 @@ import (
 	"strings"
 	"time"
 
+	copier "github.com/nakulkar-msft/copier/core"
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"github.com/wastore/lemur/cmd/util"
 
 	"github.com/pkg/errors"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/wastore/go-lustre"
 	"github.com/wastore/go-lustre/fs"
 	"github.com/wastore/go-lustre/status"
@@ -26,36 +28,55 @@ import (
 
 // Mover supports archiving/restoring data to/from Azure Storage
 type Mover struct {
-	name                string
-	cred                azblob.Credential
-	httpClient          *http.Client
-	config              *archiveConfig
+	name          string
+	httpClient    *http.Client
+	config        *archiveConfig
+	copier        copier.Copier
+	clientOptions *container.ClientOptions
 
 	//*Channels to interact wtih SAS Manager
-	getSAS              chan chan string
-	forceSASRefresh     chan time.Time
+	getSAS          chan chan string
+	forceSASRefresh chan time.Time
 }
 
 // AzMover returns a new *Mover
-func AzMover(cfg *archiveConfig, creds azblob.Credential, archiveID uint32) *Mover {
-	return &Mover{
-		name:                fmt.Sprintf("az-%d", archiveID),
-		cred:                creds,
-		config:              cfg,
-		httpClient: 		 &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:           0, // No limit
-				MaxIdleConnsPerHost:    cfg.NumThreads,
-				IdleConnTimeout:        180 * time.Second,
-				TLSHandshakeTimeout:    10 * time.Second,
-				ExpectContinueTimeout:  1 * time.Second,
-				DisableKeepAlives:      false,
-				DisableCompression:     true, 
-				MaxResponseHeaderBytes: 0,
-			},
+func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
+	const MiB = int64(1024 * 1024)
+	throughputBytesPerSec := int64(0)
+	maxBlockLength := blockblob.MaxStageBlockBytes
+	defaultConcurrency := 32
+	cachelimit := 4 * 1024 * MiB // defaults 4 GiB
+
+	if cfg.Bandwidth != 0 { // this value is in MB
+		throughputBytesPerSec = int64(cfg.Bandwidth) * MiB
+	}
+	if cfg.CacheLimit != 0 { // This value is in GB
+		cachelimit = int64(cfg.CacheLimit) * 1024 * MiB
+	}
+
+	copier := copier.NewCopier(throughputBytesPerSec, int64(maxBlockLength), cachelimit, defaultConcurrency)
+
+	clientOptions := &container.ClientOptions{}
+	clientOptions.Transport = &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:           0, // No limit
+			MaxIdleConnsPerHost:    cfg.NumThreads,
+			IdleConnTimeout:        180 * time.Second,
+			TLSHandshakeTimeout:    10 * time.Second,
+			ExpectContinueTimeout:  1 * time.Second,
+			DisableKeepAlives:      false,
+			DisableCompression:     true,
+			MaxResponseHeaderBytes: 0,
 		},
-		getSAS:             make(chan chan string),
-		forceSASRefresh:    make(chan time.Time),
+	}
+
+	return &Mover{
+		name:            fmt.Sprintf("az-%d", archiveID),
+		copier:          copier,
+		config:          cfg,
+		clientOptions:   clientOptions,
+		getSAS:          make(chan chan string),
+		forceSASRefresh: make(chan time.Time),
 	}
 }
 
@@ -75,7 +96,7 @@ func (m *Mover) Start() {
 }
 
 func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
-	var container, path string
+	var containerName, path string
 
 	u, err := url.ParseRequestURI(fileID)
 	if err == nil {
@@ -83,12 +104,12 @@ func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
 			return "", "", errors.Errorf("invalid URL in file_id %s", fileID)
 		}
 		path = u.Path[1:]
-		container = u.Host
+		containerName = u.Host
 	} else {
 		path = m.destination(fileID)
-		container = m.config.Container
+		containerName = m.config.Container
 	}
-	return container, path, nil
+	return containerName, path, nil
 }
 
 // getSASToken will block till a valid sas is returned or timeout after a minute
@@ -97,7 +118,7 @@ func (m *Mover) getSASToken() (string, error) {
 	select {
 	case m.getSAS <- ret:
 		select {
-		case sas := <- ret:
+		case sas := <-ret:
 			return sas, nil
 		case <-time.After(time.Minute):
 			return "", errors.New("Failed to get SAS")
@@ -108,7 +129,7 @@ func (m *Mover) getSASToken() (string, error) {
 }
 
 // returns true if we could successfully signal SAS manager to refresh creds in 1minute
-func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
+func (m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 	select {
 	case m.forceSASRefresh <- prevSASCtx: //this will block until we've requested for a refresh
 		return true
@@ -118,14 +139,14 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 }
 
 /*
- * SASManager() 
+ * SASManager()
  * - Returns valid SAS on received channel when Archive/Restore/Return operations ask for it
  * - Updates SAS when operations request for it (i.e. when they fail with 403)
  * - Updates SAS every `CredRefreshInterval`
  * Also, checkAzAccess() would put a valid SAS before Mover is started, and hence SASManager
  * is always seeded with a valid SAS
  */
- func (m *Mover) SASManager() {
+func (m *Mover) SASManager() {
 	defaultRefreshInterval, _ := time.ParseDuration(m.config.CredRefreshInterval)
 
 	for {
@@ -144,7 +165,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 			continue
 		}
 
-		for try := 0; ;try++{ //loop till we've a valid SAS
+		for try := 0; ; try++ { //loop till we've a valid SAS
 			var nextTryInterval time.Duration
 			sas, err := util.GetKVSecret(m.config.AzStorageKVURL, m.config.AzStorageKVSecretName)
 			if err == nil {
@@ -167,16 +188,16 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 			/*
 			 * Failed to update SAS. We'll retry with exponential delay for upto a minute
 			 * and after that we'll try every minute
-			 * 
+			 *
 			 * To not spam the log file, we'll only log first few retries and then once
 			 * every hr.
 			 */
-			 if (try < 10 || try%60 == 0) {
+			if try < 10 || try%60 == 0 {
 				util.Log(pipeline.LogError, fmt.Sprintf(
 					"Failed to update SAS.\nReason: %s, try: %d",
-					err, (try + 1)))
+					err, (try+1)))
 			}
-			
+
 			nextTryInterval = time.Minute
 			if try < len(expMultiplier) {
 				nextTryInterval = time.Duration(expMultiplier[try]) * time.Second
@@ -185,7 +206,7 @@ func(m *Mover) refreshCredential(prevSASCtx time.Time) bool {
 			//retry after delay
 			time.Sleep(nextTryInterval)
 		}
-	}	
+	}
 }
 
 func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
@@ -196,14 +217,6 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 	}
 	rate.Mark(1)
 	start := time.Now()
-
-	var pacer util.Pacer
-	/* start pacer if required */
-	if m.config.Bandwidth != 0 {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwidth %d\n", m.config.Bandwidth))
-		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
-		defer pacer.Close()
-	}
 
 	// translate the fid into an actual path first
 	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
@@ -235,19 +248,22 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 		return err
 	}
 
-	total, err := core.Archive(ctx, core.ArchiveOptions{
-		ContainerURL:  m.config.ContainerURL(),
-		ResourceSAS:   sas,
-		MountRoot:     m.config.MountRoot,
-		BlobName:      fileKey,
-		Credential:    m.cred,
-		SourcePath:    action.PrimaryPath(),
-		Parallelism:   uint16(m.config.NumThreads),
-		BlockSize:     m.config.UploadPartSize,
-		Pacer:         pacer,
-		ExportPrefix:  m.config.ExportPrefix,
-		HTTPClient:    m.httpClient,
-		OpStartTime:   opStartTime,
+	c := m.config.ContainerURL() + "?" + sas
+	cURL, err := container.NewClientWithNoCredential(c, m.clientOptions)
+	if err != nil {
+		return errors.Wrap(err, "failed to get container client")
+	}
+
+	total, err := core.Archive(ctx, m.copier, core.ArchiveOptions{
+		ContainerURL: cURL,
+		ResourceSAS:  sas,
+		MountRoot:    m.config.MountRoot,
+		BlobName:     fileKey,
+		SourcePath:   action.PrimaryPath(),
+		BlockSize:    m.config.UploadPartSize,
+		ExportPrefix: m.config.ExportPrefix,
+		HTTPClient:   m.httpClient,
+		OpStartTime:  opStartTime,
 	})
 
 	if util.ShouldRefreshCreds(err) {
@@ -261,20 +277,17 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
-		time.Since(start),
-		action.PrimaryPath(),
-		m.config.Container, fileKey))
+			time.Since(start),
+			action.PrimaryPath(),
+			m.config.Container, fileKey))
 	} else {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
-		time.Since(start),
-		action.PrimaryPath()))
+		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
+			time.Since(start),
+			action.PrimaryPath()))
 	}
 
-	u := url.URL{
-		Scheme: "az",
-		Host:   m.config.ContainerURL().Host,
-		Path:   m.config.ContainerURL().Path,
-	}
+	u, _ := url.Parse(m.config.ContainerURL())
+	u.Scheme = "az"
 
 	action.SetUUID(fileID)
 	action.SetURL(u.String())
@@ -291,14 +304,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	}
 	rate.Mark(1)
 
-	var pacer util.Pacer
-
 	start := time.Now()
-	if m.config.Bandwidth != 0 {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Starting pacer with bandwith %d MBPS\n", m.config.Bandwidth))
-		pacer = util.NewTokenBucketPacer(int64(m.config.Bandwidth*1024*1024), int64(0))
-		defer pacer.Close()
-	}
 	if action.UUID() == "" {
 		return errors.Errorf("Missing file_id on action %d", action.ID())
 	}
@@ -313,16 +319,18 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 		return err
 	}
 
-	contentLen, err := core.Restore(ctx, core.RestoreOptions{
-		ContainerURL:    m.config.ContainerURL(),
-		ResourceSAS:     sas,
+	c := m.config.ContainerURL() + "?" + sas
+	cURL, err := container.NewClientWithNoCredential(c, m.clientOptions)
+	if err != nil {
+		return errors.Wrap(err, "failed to get container client")
+	}
+
+	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
+		ContainerURL:    cURL,
 		BlobName:        srcObj,
-		Credential:      m.cred,
 		DestinationPath: action.WritePath(),
-		Parallelism:     uint16(m.config.NumThreads),
 		BlockSize:       m.config.UploadPartSize,
 		ExportPrefix:    m.config.ExportPrefix,
-		Pacer:           pacer,
 		HTTPClient:      m.httpClient,
 	})
 
@@ -337,13 +345,13 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
-		time.Since(start),
-		srcObj,
-		action.PrimaryPath()))
+			time.Since(start),
+			srcObj,
+			action.PrimaryPath()))
 	} else {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Restored %d bytes in %v to %s", m.name, action.ID(), contentLen,
-		time.Since(start),
-		action.PrimaryPath()))
+			time.Since(start),
+			action.PrimaryPath()))
 
 	}
 
@@ -352,7 +360,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 }
 
 // Remove fulfills an HSM Remove request
-func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error { 
+func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
 	rate.Mark(1)
 	if action.UUID() == "" {
@@ -370,12 +378,16 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 		return err
 	}
 
+	c := m.config.ContainerURL() + "?" + sas
+	cURL, err := container.NewClientWithNoCredential(c, m.clientOptions)
+	if err != nil {
+		return errors.Wrap(err, "failed to get container client")
+	}
+
 	err = core.Remove(ctx, core.RemoveOptions{
-		ContainerURL:   m.config.ContainerURL(),
-		ResourceSAS:   sas,
-		BlobName:      srcObj,
-		ExportPrefix:  m.config.ExportPrefix,
-		Credential:    m.cred,
+		ContainerURL: cURL,
+		BlobName:     srcObj,
+		ExportPrefix: m.config.ExportPrefix,
 	})
 
 	if util.ShouldRefreshCreds(err) {

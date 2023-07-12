@@ -11,15 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/wastore/lemur/cmd/util"
 	"github.com/Azure/azure-pipeline-go/pipeline"
+	copier "github.com/nakulkar-msft/copier/core"
+	"github.com/wastore/lemur/cmd/util"
 	chk "gopkg.in/check.v1"
 )
 
 // test upload/download with the source data uploaded to the service from a file
 // this is a round-trip test where both upload and download are exercised together
 func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism int) {
+	copier := copier.NewCopier(0, maxBlockLength, defaultCachelimit, defaultConcurrency)
 	// Set up file to upload
 	fileName := generateName("", 0)
 	filePath := filepath.Join(os.TempDir(), fileName)
@@ -34,25 +35,21 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	// Set up test container
 	bsu := getBSU()
 	containerURL, containerName := createNewContainer(c, bsu)
-	defer deleteContainer(c, containerURL)
+	defer bsu.DeleteContainer(context.TODO(), containerName, nil)
+	//	_, err  = containerURL.Delete(context.TODO(), nil)
 
 	//setup logger
 	util.InitJobLogger(pipeline.LogDebug)
 
 	// Upload the file to a block blob
-	account, key := getAccountAndKey()
-	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
-	cURL := containerURL.URL()
-	count, err := Archive(context.Background(), ArchiveOptions{
-		ContainerURL:  &cURL,
-		BlobName:      fileName,
-		SourcePath:    filePath,
-		Credential:    credential,
-		Parallelism:   uint16(parallelism),
-		BlockSize:     int64(blockSize),
-		MountRoot:     os.TempDir(),
-		HTTPClient:    &http.Client{},
+	count, err := Archive(context.Background(), copier, ArchiveOptions{
+		ContainerURL: containerURL,
+		BlobName:     fileName,
+		SourcePath:   filePath,
+		BlockSize:    int64(blockSize),
+		MountRoot:    os.TempDir(),
+		HTTPClient:   &http.Client{},
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -65,16 +62,14 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	defer destFile.Close()
 	defer os.Remove(destFileName)
 
-	blobName := containerName + "/" + fileName
+	blobName := fileName
 	// invoke restore to download the file back
-	count, err = Restore(context.Background(), RestoreOptions{
-		ContainerURL:  &cURL,
+	count, err = Restore(context.Background(), copier, RestoreOptions{
+		ContainerURL:    containerURL,
 		BlobName:        blobName,
 		DestinationPath: destFilePath,
-		Credential:      credential,
-		Parallelism:     uint16(parallelism),
 		BlockSize:       int64(blockSize),
-		HTTPClient: &http.Client{},
+		HTTPClient:      &http.Client{},
 	})
 
 	// Assert download was successful
@@ -97,6 +92,7 @@ func (s *cmdIntegrationSuite) TestUploadAndDownloadFileSingleIO(c *chk.C) {
 }
 
 func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
+	copier := copier.NewCopier(0, maxBlockLength, defaultCachelimit, defaultConcurrency)
 	fileName := generateName("", 0)
 	fileSize := 1024
 	tempDir := os.TempDir()
@@ -118,26 +114,20 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 
 	// Set up test container
 	bsu := getBSU()
-	containerURL, _ := createNewContainer(c, bsu)
-	defer deleteContainer(c, containerURL)
+	containerURL, cName := createNewContainer(c, bsu)
+	defer bsu.DeleteContainer(context.TODO(), cName, nil)
 
 	//setup logging
 	util.InitJobLogger(pipeline.LogDebug)
 
-	// Upload the file to a block blob
-	account, key := getAccountAndKey()
-	credential, err := azblob.NewSharedKeyCredential(account, key)
 	c.Assert(err, chk.IsNil)
-	cURL := containerURL.URL()
-	count, err := Archive(context.Background(), ArchiveOptions{
-		ContainerURL:  &cURL,
-		BlobName:      fileName,
-		SourcePath:    filePath,
-		Credential:    credential,
-		Parallelism:   uint16(3),
-		BlockSize:     int64(2048), //2M
-		MountRoot:     tempDir,
-		HTTPClient: &http.Client{},
+	count, err := Archive(context.Background(), copier, ArchiveOptions{
+		ContainerURL: containerURL,
+		BlobName:     fileName,
+		SourcePath:   filePath,
+		BlockSize:    int64(2048), //2M
+		MountRoot:    tempDir,
+		HTTPClient:   &http.Client{},
 	})
 	c.Assert(err, chk.Equals, nil)
 	c.Assert(count, chk.Equals, int64(fileSize))
@@ -147,7 +137,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 
 	for _, curr := range blobs {
 		blobname = filepath.Join(blobname, curr)
-		blobURL := containerURL.NewBlockBlobURL(blobname)
+		blobURL := containerURL.NewBlockBlobClient(blobname)
 		ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
 		info, err := os.Stat(filepath.Join(tempDir, blobname))
 		owner := fmt.Sprintf("%d", info.Sys().(*syscall.Stat_t).Uid)
@@ -157,14 +147,14 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 		}
 		group := fmt.Sprintf("%d", info.Sys().(*syscall.Stat_t).Gid)
 
-		props, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
+		props, err := blobURL.GetProperties(ctx, nil)
 		c.Assert(err, chk.Equals, nil)
 
-		meta := props.NewMetadata()
-		c.Assert(meta["owner"], chk.Equals, owner)
-		c.Assert(meta["group"], chk.Equals, group)
+		meta := props.Metadata
+		c.Assert(*(meta["Owner"]), chk.Equals, owner)
+		c.Assert(*(meta["Group"]), chk.Equals, group)
 
-		blobPerms, _ := strconv.ParseUint(meta["permissions"], 8, 32)
+		blobPerms, _ := strconv.ParseUint(*(meta["Permissions"]), 8, 32)
 		c.Assert(blobPerms, chk.Equals, uint64(permissions))
 	}
 }
