@@ -50,12 +50,16 @@ func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64
 		defer lock.Unlock()
 
 		t := atomic.AddInt64(&totalProgres, bytesTransferred)
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Restoring %v, Progress %d/%d, %d %% complete",
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Restoring %v, Progress %v/%v, %v %% complete",
 				 o.DestinationPath, t, stat.Size(), (float64(t)/float64(stat.Size()) * 100.0)))
 	}
 
 
-	size, err := copier.DownloadFile(ctx, b, o.DestinationPath, &blob.DownloadFileOptions{BlockSize: o.BlockSize})
+	options := blob.DownloadFileOptions{
+		BlockSize: o.BlockSize,
+		Progress: progressFunc,
+	}
+	size, err := copier.DownloadFile(ctx, b, o.DestinationPath, &options)
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Restore failed: %v", err))
 		return 0, err

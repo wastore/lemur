@@ -66,13 +66,13 @@ func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFil
 		defer lock.Unlock()
 
 		t := atomic.AddInt64(&totalProgress, bytesTransferred)
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Archiving %v: Progress %d/%d, %d %% complete",
-				 filepath, t, fileInfo.Size(), (float64(t)/float64(fileInfo.Size()) * 100.0)))
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Archiving %v: Progress %v/%v, %v %% complete",
+			filepath, t, fileInfo.Size(), (float64(t)/float64(fileInfo.Size())*100.0)))
 	}
 	return &blockblob.UploadFileOptions{
 		BlockSize: a.BlockSize,
 		Metadata:  meta,
-		Progress: progressFunc,
+		Progress:  progressFunc,
 	}, nil
 }
 
@@ -128,8 +128,8 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 	props, err := blob.GetProperties(ctx, nil)
 	if err != nil {
 		util.Log(pipeline.LogError,
-				 fmt.Sprintf("Archiving file %v: Could not get destination length %s",
-				 logPath, err))
+			fmt.Sprintf("Archiving file %v: Could not get destination length %s",
+				logPath, err))
 	}
 
 	return *props.ContentLength, err
