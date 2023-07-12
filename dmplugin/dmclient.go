@@ -505,8 +505,12 @@ func (dm *DataMoverClient) handler(name string, actions chan *dmAction) {
 			go func() { actions <- action }()
 		} else {
 			// Delete from map before we finish
-			cancel, _ := dm.cancelMap.LoadAndDelete(action.PrimaryPath())
-			cancel.(context.CancelFunc)()
+			cancel, ok := dm.cancelMap.LoadAndDelete(action.PrimaryPath())
+			if ok {
+				cancel.(context.CancelFunc)()
+			} else {
+				alert.Warn(errors.Wrapf(err, "Unexpectedly counldn't find action in map to cancel: %d", action.item.Id))
+			}
 			action.Finish(err)
 		}
 
