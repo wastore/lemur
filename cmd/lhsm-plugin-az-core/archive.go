@@ -130,6 +130,7 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 		util.Log(pipeline.LogError,
 			fmt.Sprintf("Archiving file %v: Could not get destination length %s",
 				logPath, err))
+		return 0, err
 	}
 
 	return *props.ContentLength, err
