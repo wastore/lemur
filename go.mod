@@ -13,7 +13,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0
 	github.com/intel-hpdd/go-metrics-influxdb v0.0.0-20160818143319-2b4497452ba3
 	github.com/intel-hpdd/logging v0.0.0-20170320184255-0ce155fc7407
-	github.com/nakulkar-msft/copier v0.0.0-20230712112115-717a50eed269
+	github.com/nakulkar-msft/copier v0.0.0-20230712150242-e68b47a4557d
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0

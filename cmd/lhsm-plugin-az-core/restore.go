@@ -38,7 +38,7 @@ func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64
 		util.Log(pipeline.LogInfo, fmt.Sprintf("Restoring blob to %s.", o.DestinationPath))
 	}
 
-	stat, err := os.Stat(o.DestinationPath)
+	props, err := b.GetProperties(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -51,7 +51,7 @@ func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64
 
 		t := atomic.AddInt64(&totalProgres, bytesTransferred)
 		util.Log(pipeline.LogDebug, fmt.Sprintf("Restoring %v, Progress %v/%v, %v %% complete",
-				 o.DestinationPath, t, stat.Size(), (float64(t)/float64(stat.Size()) * 100.0)))
+				 o.DestinationPath, t, *props.ContentLength, (float64(t)/float64(*props.ContentLength)) * 100.0))
 	}
 
 
