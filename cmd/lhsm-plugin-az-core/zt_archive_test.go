@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
-	copier "github.com/nakulkar-msft/copier/core"
+	copier "github.com/wastore/lemur/copier/core"
 	"github.com/wastore/lemur/cmd/util"
 	chk "gopkg.in/check.v1"
 )
