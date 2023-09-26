@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	copier "github.com/nakulkar-msft/copier/core"
+	copier "github.com/wastore/lemur/copier/core"
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"github.com/wastore/lemur/cmd/util"
 

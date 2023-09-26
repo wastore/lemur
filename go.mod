@@ -10,10 +10,10 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/golang/protobuf v1.5.3
+	github.com/google/uuid v1.3.0
 	github.com/hashicorp/hcl v1.0.0
 	github.com/intel-hpdd/go-metrics-influxdb v0.0.0-20160818143319-2b4497452ba3
 	github.com/intel-hpdd/logging v0.0.0-20170320184255-0ce155fc7407
-	github.com/nakulkar-msft/copier v0.0.0-20230907164450-158acede6c66
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
@@ -38,7 +38,6 @@ require (
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
 	github.com/dimchansky/utfbom v1.1.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.2+incompatible // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/influxdata/influxdb v1.8.2 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.1.0 // indirect
