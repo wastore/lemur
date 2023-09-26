@@ -4,7 +4,7 @@
 
 package fsroot
 
-import "github.com/wastore/go-lustre/fs"
+import "github.com/wastore/lemur/go-lustre/fs"
 
 // TestClient implements the client.Client interface
 type testClient struct {

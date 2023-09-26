@@ -21,7 +21,7 @@ import (
 
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/wastore/go-lustre/fs/spec"
+	"github.com/wastore/lemur/go-lustre/fs/spec"
 	"github.com/wastore/lemur/cmd/lhsmd/config"
 	"github.com/wastore/lemur/cmd/util"
 )

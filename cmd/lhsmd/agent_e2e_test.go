@@ -19,9 +19,9 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/wastore/go-lustre"
-	"github.com/wastore/go-lustre/fs"
-	"github.com/wastore/go-lustre/hsm"
-	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/lemur/go-lustre/fs"
+	"github.com/wastore/lemur/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent"
 	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/wastore/lemur/cmd/lhsmd/config"

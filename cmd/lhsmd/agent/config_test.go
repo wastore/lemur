@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/wastore/lemur/cmd/lhsmd/config"
-	"github.com/wastore/go-lustre/fs/spec"
+	"github.com/wastore/lemur/go-lustre/fs/spec"
 )
 
 func TestConfiguredPlugins(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/wastore/go-lustre"
-	"github.com/wastore/go-lustre/fs"
-	"github.com/wastore/go-lustre/status"
+	"github.com/wastore/lemur/go-lustre/fs"
+	"github.com/wastore/lemur/go-lustre/status"
 
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/wastore/lemur/dmplugin"
