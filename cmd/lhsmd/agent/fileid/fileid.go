@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/wastore/go-lustre"
-	"github.com/wastore/go-lustre/fs"
-	"github.com/wastore/go-lustre/pkg/xattr"
+	"github.com/wastore/lemur/go-lustre/fs"
+	"github.com/wastore/lemur/go-lustre/pkg/xattr"
 	"github.com/intel-hpdd/logging/debug"
 	"github.com/pkg/errors"
 )

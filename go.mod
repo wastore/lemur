@@ -17,11 +17,13 @@ require (
 	github.com/pborman/uuid v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
+	github.com/smartystreets/goconvey v1.6.4
 	github.com/wastore/go-lustre v0.0.4-0.20211110043228-c6214ea89674
 	golang.org/x/net v0.12.0
 	golang.org/x/sys v0.10.0
 	google.golang.org/grpc v1.56.2
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -38,14 +40,16 @@ require (
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
 	github.com/dimchansky/utfbom v1.1.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.2+incompatible // indirect
+	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
 	github.com/influxdata/influxdb v1.8.2 // indirect
+	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.1.0 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/smartystreets/assertions v0.0.0-20180927180507-b2de0cb4f26d // indirect
 	golang.org/x/crypto v0.11.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

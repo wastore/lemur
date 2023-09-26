@@ -13,8 +13,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	"github.com/wastore/go-lustre/hsm"
-	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/lemur/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 )
 
