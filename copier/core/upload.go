@@ -22,6 +22,7 @@ package copier
 import (
 	"bytes"
 	"context"
+  "fmt"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -113,6 +114,7 @@ func (c *copier) UploadFile(ctx context.Context,
 	}
 
 	fileSize := stat.Size()
+  fmt.Print("ELLIS: (%s) size (%ld)", filepath, fileSize)
 
 	// get default blocksize if not specified, or revise blocksize if too small
 	// relative to the file to result in a commit beneath blockblob.MaxBlocks
@@ -120,6 +122,7 @@ func (c *copier) UploadFile(ctx context.Context,
 	if err != nil {
 		return err
 	}
+  fmt.Print("ELLIS: (%s) blocksize (%ld)", filepath, o.BlockSize)
 
 	if (o.BlockSize >= fileSize && fileSize <= maxUploadBlobBytes) { //perform a single thread copy here.
 		_, err := b.Upload(ctx, newPacedReadSeekCloser(ctx, c.pacer, file), getUploadOptions(o))
@@ -151,6 +154,7 @@ func (c *copier) uploadInternal(ctx context.Context,
 
 	uploadBlock := func(buff []byte, blockIndex uint16) {
 		defer wg.Done()
+    fmt.Print("ELLIS: multithread: blockIndex=%d", blockIndex)
 		body := newPacedReadSeekCloser(ctx, c.pacer, withNopCloser(bytes.NewReader(buff)))
 		blockName := base64.StdEncoding.EncodeToString([]byte(uuid.New().String()))
 		blockNames[blockIndex] = blockName
