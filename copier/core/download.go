@@ -53,12 +53,6 @@ func (c *copier) DownloadFile(
 		o = &blob.DownloadFileOptions{}
 	}
 
-	// set defaults
-	if o.BlockSize == 0 {
-		o.BlockSize = defaultBlockBlobBlockSize
-	}
-  fmt.Print("ELLIS: (%s) blocksize (%ld)", filepath, o.BlockSize)
-
 	b := bb.BlobClient()
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -73,6 +67,14 @@ func (c *copier) DownloadFile(
 	}
 	size = *props.ContentLength
   fmt.Print("ELLIS: (%s) size (%ld)", filepath, size)
+
+	// get default blocksize if not specified, or revise blocksize if too small
+	// relative to the file to result in a commit beneath blockblob.MaxBlocks
+	o.BlockSize, err = getBlockSize(o.BlockSize, size)
+	if err != nil {
+		return 0, err
+	}
+  fmt.Print("ELLIS: (%s) blocksize (%ld)", filepath, o.BlockSize)
 
 	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -98,7 +100,7 @@ func (c *copier) DownloadFile(
 		return 0, nil
 	}
 
-	if size <= o.BlockSize { //perform a single thread copy here.
+	if (o.BlockSize >= size) { //perform a single thread copy here.
     fmt.Print("ELLIS: (%s) single thread copy", filepath)
 		dr, err := b.DownloadStream(ctx, downloadFileOptionsToStreamOptions(o))
 		if err != nil {
