@@ -22,6 +22,7 @@ package copier
 
 import (
 	"context"
+  "fmt"
 	"io"
 	"os"
 	"sync"
@@ -56,6 +57,7 @@ func (c *copier) DownloadFile(
 	if o.BlockSize == 0 {
 		o.BlockSize = defaultBlockBlobBlockSize
 	}
+  fmt.Print("ELLIS: (%s) blocksize (%ld)", filepath, o.BlockSize)
 
 	b := bb.BlobClient()
 
@@ -70,12 +72,14 @@ func (c *copier) DownloadFile(
 		return 0, err
 	}
 	size = *props.ContentLength
+  fmt.Print("ELLIS: (%s) size (%ld)", filepath, size)
 
 	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return 0, err
 	}
 	defer file.Close()
+  fmt.Print("ELLIS: (%s) file opened", filepath)
 
 	// 2. Compare and try to resize local file's size if it doesn't match Azure blob's size.
 	stat, err := file.Stat()
@@ -87,6 +91,7 @@ func (c *copier) DownloadFile(
 			return 0, err
 		}
 	}
+  fmt.Print("ELLIS: (%s) file stat'd", filepath)
 
 	// Nothing to be done
 	if size == 0 {
@@ -94,6 +99,7 @@ func (c *copier) DownloadFile(
 	}
 
 	if size <= o.BlockSize { //perform a single thread copy here.
+    fmt.Print("ELLIS: (%s) single thread copy", filepath)
 		dr, err := b.DownloadStream(ctx, downloadFileOptionsToStreamOptions(o))
 		if err != nil {
 			return 0, err
@@ -104,6 +110,7 @@ func (c *copier) DownloadFile(
 		return file.ReadFrom(newPacedReader(ctx, c.pacer, body))
 	}
 
+  fmt.Print("ELLIS: (%s) multi thread copy", filepath)
 	return c.downloadInternal(ctx, cancel, b, file, size, o)
 }
 
@@ -129,6 +136,7 @@ func (c *copier) downloadInternal(
 	// file serial writer
 	count := fileSize
 	numBlocks := uint16(((count - 1) / o.BlockSize) + 1)
+  fmt.Print("ELLIS: numBlocks=%d, fileSize=%d, blocksize=%d", numBlocks, count, o.BlockSize)
 
 	blocks := make([]chan []byte, numBlocks)
 	for i := range blocks {
@@ -142,15 +150,18 @@ func (c *copier) downloadInternal(
 		for _, block := range blocks {
 			select {
 			case <-ctx.Done():
+        fmt.Print("ELLIS: multithread write context done")
 				return
 			case buff := <-block:
 				n, err := file.Write(buff)
 				if err != nil {
 					postError(err)
+          fmt.Print("ELLIS: multithread write failed 158")
 					return
 				}
 				if n != len(buff) {
 					postError(io.ErrShortWrite)
+          fmt.Print("ELLIS: multithread write failed 163")
 					return
 				}
 
@@ -173,12 +184,14 @@ func (c *copier) downloadInternal(
 	downloadBlock := func(buff []byte, blockNum uint16, currentBlockSize, offset int64) {
 		defer wg.Done()
 
+    fmt.Print("ELLIS: multithread write: blockNum=%d, curBlockSize=%d, offset=%d", blockNum, currentBlockSize, offset)
 		options := downloadFileOptionsToStreamOptions(o)
 		options.Range = blob.HTTPRange{Offset: offset, Count: currentBlockSize}
 		dr, err := b.DownloadStream(ctx, options)
 
 		if err != nil {
 			postError(err)
+      fmt.Print("ELLIS: multithread write failed 194")
 			return
 		}
 
@@ -187,12 +200,14 @@ func (c *copier) downloadInternal(
 
 		if err := c.pacer.RequestTrafficAllocation(ctx, int64(len(buff))); err != nil {
 			postError(err)
+      fmt.Print("ELLIS: multithread write failed 202")
 			return
 		}
 
 		_, err = io.ReadFull(body, buff)
 		if err != nil {
 			postError(err)
+      fmt.Print("ELLIS: multithread write failed 209")
 			return
 		}
 
@@ -238,8 +253,10 @@ func (c *copier) downloadInternal(
 	// Wait for all chunks to be done.
 	wg.Wait()
 	if err != nil {
+    fmt.Print("ELLIS: multithread write failed 255")
 		return 0, err
 	}
 
+  fmt.Print("ELLIS: multithread write success")
 	return count, nil
 }
