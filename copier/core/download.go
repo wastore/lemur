@@ -125,7 +125,7 @@ func (c *copier) downloadInternal(
 	o *blob.DownloadFileOptions) (int64, error) {
 	// short hand for routines to report and error
 	errorChannel := make(chan error)
-	postError := func(err error) {
+	setErrorIfNotCancelled := func(err error) {
 		select {
 		case <-ctx.Done():
 		case errorChannel <- err:
@@ -157,12 +157,12 @@ func (c *copier) downloadInternal(
 			case buff := <-block:
 				n, err := file.Write(buff)
 				if err != nil {
-					postError(err)
+					setErrorIfNotCancelled(err)
           fmt.Print("ELLIS: multithread write failed 158")
 					return
 				}
 				if n != len(buff) {
-					postError(io.ErrShortWrite)
+					setErrorIfNotCancelled(io.ErrShortWrite)
           fmt.Print("ELLIS: multithread write failed 163")
 					return
 				}
@@ -177,7 +177,7 @@ func (c *copier) downloadInternal(
 		}
 
 		if totalWrite != count {
-			postError(io.ErrShortWrite)
+			setErrorIfNotCancelled(io.ErrShortWrite)
 		}
 		file.Sync()
 	}()
@@ -185,6 +185,9 @@ func (c *copier) downloadInternal(
 	// DownloadBlock func downloads each block of the blob into buffer provided
 	downloadBlock := func(buff []byte, blockNum uint16, currentBlockSize, offset int64) {
 		defer wg.Done()
+		if ctx.Err() != nil {
+			return
+		}
 
     fmt.Print("ELLIS: multithread write: blockNum=%d, curBlockSize=%d, offset=%d", blockNum, currentBlockSize, offset)
 		options := downloadFileOptionsToStreamOptions(o)
@@ -192,7 +195,7 @@ func (c *copier) downloadInternal(
 		dr, err := b.DownloadStream(ctx, options)
 
 		if err != nil {
-			postError(err)
+			setErrorIfNotCancelled(err)
       fmt.Print("ELLIS: multithread write failed 194")
 			return
 		}
@@ -201,14 +204,14 @@ func (c *copier) downloadInternal(
 		defer body.Close()
 
 		if err := c.pacer.RequestTrafficAllocation(ctx, int64(len(buff))); err != nil {
-			postError(err)
+			setErrorIfNotCancelled(err)
       fmt.Print("ELLIS: multithread write failed 202")
 			return
 		}
 
 		_, err = io.ReadFull(body, buff)
 		if err != nil {
-			postError(err)
+			setErrorIfNotCancelled(err)
       fmt.Print("ELLIS: multithread write failed 209")
 			return
 		}
@@ -226,6 +229,9 @@ func (c *copier) downloadInternal(
 	}()
 
 	for blockNum := uint16(0); blockNum < numBlocks; blockNum++ {
+		if ctx.Err() != nil {
+			break
+		}
 		currBlockSize := o.BlockSize
 		if blockNum == numBlocks-1 { // Last block
 			// Remove size of all transferred blocks from total
@@ -236,7 +242,7 @@ func (c *copier) downloadInternal(
 
 		// allocate a buffer. This buffer will be released by the fileWriter
 		if err := c.cacheLimiter.WaitUntilAdd(ctx, currBlockSize, nil); err != nil {
-			postError(err)
+			setErrorIfNotCancelled(err)
 			break
 		}
 		buff := c.slicePool.RentSlice(currBlockSize)
@@ -252,11 +258,14 @@ func (c *copier) downloadInternal(
 		c.execute(f)
 	}
 
-	// Wait for all chunks to be done.
+	// Wait for all scheduled chunks to be done.
 	wg.Wait()
 	if err != nil {
     fmt.Print("ELLIS: multithread write failed 255")
 		return 0, err
+	}
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
 	}
 
   fmt.Print("ELLIS: multithread write success")

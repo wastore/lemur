@@ -139,8 +139,9 @@ func (c *copier) uploadInternal(ctx context.Context,
 	fileSize int64,
 	o *blockblob.UploadFileOptions) error {
 	// short hand for routines to report and error
+
 	errorChannel := make(chan error)
-	postError := func(err error) {
+	setErrorIfNotCancelled := func(err error) {
 		select {
 		case <-ctx.Done():
 		case errorChannel <- err:
@@ -154,6 +155,9 @@ func (c *copier) uploadInternal(ctx context.Context,
 
 	uploadBlock := func(buff []byte, blockIndex uint16) {
 		defer wg.Done()
+		if ctx.Err() != nil {
+			return
+		}
     fmt.Print("ELLIS: multithread: blockIndex=%d", blockIndex)
 		body := newPacedReadSeekCloser(ctx, c.pacer, withNopCloser(bytes.NewReader(buff)))
 		blockName := base64.StdEncoding.EncodeToString([]byte(uuid.New().String()))
@@ -161,7 +165,7 @@ func (c *copier) uploadInternal(ctx context.Context,
 
 		_, err := b.StageBlock(ctx, blockNames[blockIndex], body, getStageBlockOptions(o))
 		if err != nil {
-			postError(err)
+			setErrorIfNotCancelled(err)
 		}
 
 		//Return the buffer
@@ -181,6 +185,9 @@ func (c *copier) uploadInternal(ctx context.Context,
 	}()
 
 	for blockNum := uint16(0); blockNum < numBlocks; blockNum++ {
+		if ctx.Err() != nil { // If the context is close, do not schedule any more.
+			break
+		}
 		currBlockSize := o.BlockSize
 		if blockNum == numBlocks-1 { // Last block
 			// Remove size of all transferred blocks from total
@@ -188,18 +195,16 @@ func (c *copier) uploadInternal(ctx context.Context,
 		}
 
 		if err := c.cacheLimiter.WaitUntilAdd(ctx, currBlockSize, nil); err != nil {
-			postError(err)
+			setErrorIfNotCancelled(err)
 			break
 		}
 		buff := c.slicePool.RentSlice(currBlockSize)
 
-		n, err := file.Read(buff)
-		if err != nil {
-			postError(err)
+		if n, err := file.Read(buff); err != nil {
+			setErrorIfNotCancelled(err)
 			break
-		}
-		if n != int(currBlockSize) {
-			postError(errors.New("invalid read"))
+		} else if n != int(currBlockSize) {
+			setErrorIfNotCancelled(errors.New("invalid read"))
 			break
 		}
 
@@ -208,13 +213,20 @@ func (c *copier) uploadInternal(ctx context.Context,
 		}(buff, blockNum)
 
 		wg.Add(1)
-		c.execute(f)
+		//schedule the block
+		if err := c.execute(f); err != nil {
+			setErrorIfNotCancelled(err)
+			break
+		}
 	}
 
-	// Wait for all chunks to be done.
+	// Wait for all scheduled chunks to be done.
 	wg.Wait()
 	if err != nil {
 		return err
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	_, err = b.CommitBlockList(ctx, blockNames, getCommitBlockListOptions(o))
