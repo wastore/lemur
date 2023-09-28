@@ -17,7 +17,6 @@ import (
 	"github.com/wastore/lemur/go-lustre/hsm"
 	"github.com/wastore/lemur/go-lustre/llapi"
 	"github.com/wastore/lemur/go-lustre/status"
-	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
 )
@@ -73,10 +72,6 @@ func createSnapshots(mnt fs.RootDir, archive uint, fileID []byte, names []string
 			err = createStubFile(f, fi, archive, layout)
 			if err != nil {
 				return errors.Wrap(err, "create stub file")
-			}
-			err = fileid.UUID.Set(f, fileID)
-			if err != nil {
-				return errors.Wrapf(err, "%s: set fileid", f)
 			}
 			firstPath = f
 			first = false

@@ -210,11 +210,7 @@ func (m *Mover) SASManager() {
 }
 
 func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d archive %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	} else {
-		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
-	}
+  util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 	start := time.Now()
 
@@ -286,32 +282,38 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 			action.PrimaryPath()))
 	}
 
-	u, _ := url.Parse(m.config.ContainerURL())
-	u.Scheme = "az"
-
-	action.SetUUID(fileID)
-	action.SetURL(u.String())
 	action.SetActualLength(total)
 	return nil
 }
 
 // Restore fulfills an HSM Restore request
 func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d restore %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
-	} else {
-		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
-	}
+	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-	start := time.Now()
-	if action.UUID() == "" {
-		return errors.Errorf("Missing file_id on action %d", action.ID())
-	}
-	_, srcObj, err := m.fileIDtoContainerPath(action.UUID())
+	// translate the fid into an actual path first
+	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
+	fid, err := lustre.ParseFid(fidStr)
 	if err != nil {
-		return errors.Wrap(err, "fileIDtoContainerPath failed")
+		return errors.Wrap(err, "failed to parse fid")
 	}
+	rootDir, err := fs.MountRoot(m.config.MountRoot)
+	if err != nil {
+		return errors.Wrap(err, "failed to find root dir")
+	}
+	fnames, err := status.FidPathnames(rootDir, fid)
+	if err != nil {
+		return errors.Wrap(err, "failed to get pathname")
+	}
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
+	}
+
+	if len(fnames) > 1 {
+		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
+	}
+	fileID := fnames[0]
+	fileKey := m.destination(fileID)
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
@@ -327,7 +329,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 
 	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
 		ContainerURL:    cURL,
-		BlobName:        srcObj,
+		BlobName:        fileKey,
 		DestinationPath: action.WritePath(),
 		BlockSize:       m.config.UploadPartSize,
 		ExportPrefix:    m.config.ExportPrefix,
@@ -345,12 +347,12 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
-			time.Since(start),
-			srcObj,
+			time.Since(opStartTime),
+			fileKey,
 			action.PrimaryPath()))
 	} else {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Restored %d bytes in %v to %s", m.name, action.ID(), contentLen,
-			time.Since(start),
+			time.Since(opStartTime),
 			action.PrimaryPath()))
 
 	}
@@ -361,16 +363,32 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 
 // Remove fulfills an HSM Remove request
 func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
-	util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d remove %s %s", m.name, action.ID(), action.PrimaryPath(), action.UUID()))
+  util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d remove %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
-	if action.UUID() == "" {
-		return errors.New("Missing file_id")
+
+	// translate the fid into an actual path first
+	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
+	fid, err := lustre.ParseFid(fidStr)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse fid")
+	}
+	rootDir, err := fs.MountRoot(m.config.MountRoot)
+	if err != nil {
+		return errors.Wrap(err, "failed to find root dir")
+	}
+	fnames, err := status.FidPathnames(rootDir, fid)
+	if err != nil {
+		return errors.Wrap(err, "failed to get pathname")
+	}
+	if util.ShouldLog(pipeline.LogDebug) {
+		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
 	}
 
-	_, srcObj, err := m.fileIDtoContainerPath(string(action.UUID()))
-	if err != nil {
-		return errors.Wrap(err, "fileIDtoContainerPath failed")
+	if len(fnames) > 1 {
+		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
 	}
+	fileID := fnames[0]
+	fileKey := m.destination(fileID)
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
@@ -386,7 +404,7 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 
 	err = core.Remove(ctx, core.RemoveOptions{
 		ContainerURL: cURL,
-		BlobName:     srcObj,
+		BlobName:     fileKey,
 		ExportPrefix: m.config.ExportPrefix,
 	})
 

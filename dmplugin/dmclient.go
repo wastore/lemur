@@ -79,24 +79,6 @@ type (
 		// WritePath returns the action item's write path (e.g. for restores)
 		WritePath() string
 
-		// UUID returns the action item's file id
-		UUID() string
-
-		// Hash returns the action item's file id
-		Hash() []byte
-
-		// URL returns the action item's file id
-		URL() string
-
-		// SetUUID sets the action's file id
-		SetUUID(id string)
-
-		// SetHash sets the action's file id
-		SetHash(hash []byte)
-
-		// SetURL sets the action's file id
-		SetURL(id string)
-
 		// SetActualLength sets the action's actual file length
 		SetActualLength(length int64)
 	}
@@ -235,36 +217,6 @@ func (a *dmAction) PrimaryPath() string {
 // WritePath returns the action item's write path (e.g. for restores)
 func (a *dmAction) WritePath() string {
 	return a.item.WritePath
-}
-
-// UUID returns the action item's file id
-func (a *dmAction) UUID() string {
-	return a.item.Uuid
-}
-
-// Hash returns the action item's file id
-func (a *dmAction) Hash() []byte {
-	return a.item.Hash
-}
-
-// URL returns the action item's file id
-func (a *dmAction) URL() string {
-	return a.item.Url
-}
-
-// SetUUID sets the action's file uuid
-func (a *dmAction) SetUUID(id string) {
-	a.uuid = id
-}
-
-// SetHash sets the action's file hash
-func (a *dmAction) SetHash(h []byte) {
-	a.hash = h
-}
-
-// SetURL sets the action's file id
-func (a *dmAction) SetURL(u string) {
-	a.url = u
 }
 
 // SetActualLength sets the action's actual file length
