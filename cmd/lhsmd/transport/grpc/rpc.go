@@ -215,7 +215,7 @@ func (s *dmRPCServer) StatusStream(stream pb.DataMover_StatusStreamServer) error
 			continue
 		}
 
-		if ok && action.Handle().Action() !=  llapi.HsmActionCancel {
+		if ok {
 			_, err := action.Update(status)
 			if err != nil {
 				debug.Printf("Status update for 0x%x did not complete: %s", status.Id, err)

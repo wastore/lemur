@@ -82,9 +82,9 @@ func (as *ActionStats) CompleteAction(a *Action, rc int) {
 	s.queueLength.Dec(1)
   // Cancel's don't call CompleteAction for themselves.  The action being
   // canceled must decrement on the cancel action's behalf.
-  if (rc == int(syscall.ECANCELED)) {
-    s.queueLength.Dec(1)
-  }
+  //if (rc == int(syscall.ECANCELED)) {
+  //  s.queueLength.Dec(1)
+  //}
 	s.completed.UpdateSince(a.start)
 	atomic.AddUint64(&s.changes, 1)
 }
