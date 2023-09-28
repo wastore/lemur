@@ -23,7 +23,6 @@ import (
 	"github.com/wastore/lemur/go-lustre/hsm"
 	"github.com/wastore/lemur/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent"
-	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 	"github.com/wastore/lemur/cmd/lhsmd/config"
 	_ "github.com/wastore/lemur/cmd/lhsmd/transport/grpc"
 	"github.com/wastore/lemur/dmplugin"
@@ -43,8 +42,6 @@ var (
 func init() {
 	flag.BoolVar(&enableLeakTest, "leak", false, "enable leak check")
 	flag.Parse()
-	// swap in the dummy implementation
-	fileid.EnableTestMode()
 }
 
 type (
@@ -57,7 +54,6 @@ type (
 	}
 
 	testMoverData struct {
-		UUID        string
 		Length      int64
 		Errval      int
 		UpdateCount int
@@ -65,7 +61,6 @@ type (
 )
 
 // Archive tests archive requests
-// * The request data is used as the fileID
 func (t *testMover) Archive(a dmplugin.Action) error {
 	debug.Printf("testMover received Archive action: %s", a)
 	t.receivedAction <- a
@@ -75,9 +70,6 @@ func (t *testMover) Archive(a dmplugin.Action) error {
 		return errors.Wrap(err, fmt.Sprintf("parsing '%s'", string(a.Data())))
 	}
 
-	if data.UUID != "" {
-		a.SetUUID(data.UUID)
-	}
 	if data.Length > 0 {
 		a.SetActualLength(data.Length)
 	}
@@ -271,9 +263,6 @@ func TestArchiveEndToEnd(t *testing.T) {
 
 	for i, expected := range cases {
 		testFid := testGenFid(t, i)
-		if expected.UUID == "" {
-			expected.UUID = fmt.Sprintf("testid-%x", i)
-		}
 		adata, err := agent.MarshalActionData(nil, &expected)
 		if err != nil {
 			t.Fatal(err)
@@ -309,10 +298,6 @@ func TestArchiveEndToEnd(t *testing.T) {
 					continue
 				}
 
-				buf, _ := fileid.UUID.GetByFid(fs.RootDir{}, testFid)
-				if string(buf) != expected.UUID {
-					t.Fatalf("fileID invalid '%s'", buf)
-				}
 				if update.Length != expected.Length {
 					t.Fatalf("Length expected %v != %v", expected.Length, update.Length)
 				}
@@ -349,7 +334,6 @@ func TestRestoreEndToEnd(t *testing.T) {
 	for i, expected := range cases {
 		testFid := testGenFid(t, i)
 
-		fileid.UUID.Set(fs.FidRelativePath(testFid), []byte("moo"))
 		// Inject an action
 		adata, err := agent.MarshalActionData(nil, &expected)
 		if err != nil {
@@ -420,7 +404,6 @@ func TestRemoveEndToEnd(t *testing.T) {
 
 	for i, expected := range cases {
 		testFid := testGenFid(t, i)
-		fileid.UUID.Set(fs.FidRelativePath(testFid), []byte("moo"))
 		// Inject an action
 		adata, err := agent.MarshalActionData(nil, &expected)
 		if err != nil {

@@ -90,36 +90,6 @@ func (a *TestAction) WritePath() string {
 	return a.path
 }
 
-// UUID returns the action item's file id
-func (a *TestAction) UUID() string {
-	return a.uuid
-}
-
-// Hash returns the action item's file id
-func (a *TestAction) Hash() []byte {
-	return a.hash
-}
-
-// URL returns the action item's file id
-func (a *TestAction) URL() string {
-	return a.url
-}
-
-// SetUUID returns the action item's file id
-func (a *TestAction) SetUUID(u string) {
-	a.uuid = u
-}
-
-// SetHash sets the action's file id
-func (a *TestAction) SetHash(id []byte) {
-	a.hash = id
-}
-
-// SetURL returns the action item's file id
-func (a *TestAction) SetURL(u string) {
-	a.url = u
-}
-
 // SetActualLength sets the action's actual file length
 func (a *TestAction) SetActualLength(length int64) {
 	if a.length != lustre.MaxExtentLength && length != a.length {
