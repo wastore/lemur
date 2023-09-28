@@ -56,9 +56,6 @@ type (
 		status       chan *pb.ActionStatus
 		item         *pb.ActionItem
 		actualLength *int64
-		uuid         string
-		hash         []byte
-		url          string
 	}
 
 	// Action defines an interface for dm actions
@@ -129,7 +126,7 @@ func getHandle(ctx context.Context) (*pb.Handle, bool) {
 }
 
 func (a *dmAction) String() string {
-	return fmt.Sprintf("%v uuid:'%s' actualSize:%v", a.item, a.uuid, a.actualLength)
+	return fmt.Sprintf("%v actualSize:%v", a.item, a.actualLength)
 }
 
 // Update sends an action status update
@@ -158,9 +155,6 @@ func (a *dmAction) complete() error {
 		Completed: true,
 		Offset:    a.item.Offset,
 		Length:    a.item.Length,
-		Uuid:      a.uuid,
-		Hash:      a.hash,
-		Url:       a.url,
 	}
 	if a.actualLength != nil {
 		status.Length = *a.actualLength
