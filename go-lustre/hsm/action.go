@@ -12,8 +12,6 @@ import (
 	"github.com/wastore/go-lustre"
 	"github.com/wastore/lemur/go-lustre/fs"
 	"github.com/wastore/lemur/go-lustre/llapi"
-	"github.com/wastore/lemur/go-lustre/status"
-	"github.com/intel-hpdd/logging/alert"
 	"golang.org/x/sys/unix"
 )
 
@@ -164,17 +162,6 @@ func (ai *actionItem) copyLovMd() error {
 // this action.
 func (ai *actionItem) Begin(openFlags int, isError bool) (ActionHandle, error) {
 	mdtIndex := -1
-	setLov := false
-	if ai.Action() == RESTORE && !isError {
-		var err error
-		mdtIndex, err = status.GetMdt(ai.cdc.root, ai.Fid())
-		if err != nil {
-
-			return nil, err
-		}
-		openFlags = llapi.LovDelayCreate
-		setLov = true
-	}
 	var err error
 	ai.mu.Lock()
 	ai.hcap, err = llapi.HsmActionBegin(ai.cdc.hcp, &ai.hai, mdtIndex, openFlags, isError)
@@ -187,11 +174,6 @@ func (ai *actionItem) Begin(openFlags int, isError bool) (ActionHandle, error) {
 
 	}
 	aih := (*actionItem)(ai)
-	if setLov {
-		if err := aih.copyLovMd(); err != nil {
-			alert.Warn(err)
-		}
-	}
 	return aih, nil
 }
 
