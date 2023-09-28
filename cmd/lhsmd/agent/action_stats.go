@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"syscall"
+	//"syscall"
 	"time"
 
 	"golang.org/x/net/context"
