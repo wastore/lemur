@@ -152,11 +152,14 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 		debug.Printf("id:%d completed status: %v in %v", status.Id, status.Error, duration)
 
 		action.agent.stats.CompleteAction(action, int(status.Error))
-		err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
-		if err != nil {
-			audit.Logf("id:%d completion failed: %v", status.Id, err)
-			return true, err // Completed, but Failed. Internal HSM state is not updated
-		}
+    // Don't .End cancels -- they have no file descriptors to close
+    if (action.Handle().Action() != llapi.HsmActionCancel) {
+      err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+      if err != nil {
+        audit.Logf("id:%d completion failed: %v", status.Id, err)
+        return true, err // Completed, but Failed. Internal HSM state is not updated
+      }
+    }
 		return true, nil // Completed
 	}
 	err := action.aih.Progress(status.Offset, status.Length, action.aih.Length(), 0)
