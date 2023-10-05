@@ -13,9 +13,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	"github.com/wastore/go-lustre/hsm"
-	"github.com/wastore/go-lustre/llapi"
-	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
+	"github.com/wastore/lemur/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/llapi"
 )
 
 // Construct a FileInfo compatible struct.
@@ -109,9 +108,6 @@ func main() {
 	if err != nil {
 	    log.Fatal(err)
 	}
-
-	uuid := fmt.Sprintf("az://%s/%s", containerName, name)
-	fileid.UUID.Set(name, []byte(uuid))
 
 	<-sem
     }

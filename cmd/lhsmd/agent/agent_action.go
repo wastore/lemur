@@ -5,7 +5,6 @@
 package agent
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
@@ -13,15 +12,14 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/wastore/lemur/cmd/lhsmd/agent/fileid"
 	pb "github.com/wastore/lemur/pdm"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
 
-	"github.com/wastore/go-lustre/fs"
-	"github.com/wastore/go-lustre/hsm"
-	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/lemur/go-lustre/fs"
+	"github.com/wastore/lemur/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/llapi"
 )
 
 type (
@@ -34,9 +32,6 @@ type (
 		aih   hsm.ActionHandle
 		agent *HsmAgent
 		start time.Time
-		UUID  string
-		Hash  []byte
-		URL   string
 		Data  []byte
 	}
 
@@ -115,40 +110,6 @@ func (action *Action) Prepare() error {
 	if len(data.MoverData) > 0 {
 		action.Data = data.MoverData
 	}
-
-	if len(data.FileID) > 0 {
-		debug.Printf("found fileID from user: %v %d", data.FileID, len(data.FileID))
-		action.UUID = string(data.FileID)
-	} else {
-		switch action.aih.Action() {
-		case llapi.HsmActionRestore, llapi.HsmActionRemove:
-			uuid, err := fileid.UUID.GetByFid(action.agent.Root(), action.aih.Fid())
-			if err != nil {
-				alert.Warnf("Error reading UUID: %v (%v)", err, action)
-			} else {
-				action.UUID = string(uuid)
-			}
-
-			buf, err := fileid.Hash.GetByFid(action.agent.Root(), action.aih.Fid())
-			if err != nil {
-				debug.Printf("Error reading Hash: %v (%v)", err, action)
-			}
-			hash := make([]byte, hex.DecodedLen(len(buf)))
-			_, err = hex.Decode(hash, buf)
-			action.Hash = hash
-			if err != nil {
-				debug.Printf("Error decoding Hash: %v (%v)", err, action)
-			}
-
-			url, err := fileid.URL.GetByFid(action.agent.Root(), action.aih.Fid())
-			if err != nil {
-				debug.Printf("Error reading URL: %v (%v)", err, action)
-			} else {
-				action.URL = string(url)
-			}
-
-		}
-	}
 	return nil
 }
 
@@ -160,9 +121,6 @@ func (action *Action) AsMessage() *pb.ActionItem {
 		PrimaryPath: fs.FidRelativePath(action.aih.Fid()),
 		Offset:      action.aih.Offset(),
 		Length:      action.aih.Length(),
-		Uuid:        action.UUID,
-		Hash:        action.Hash,
-		Url:         action.URL,
 		Data:        action.Data,
 	}
 
@@ -193,26 +151,15 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 		duration := time.Since(action.start)
 		debug.Printf("id:%d completed status: %v in %v", status.Id, status.Error, duration)
 
-		if status.Uuid != "" {
-			fileid.UUID.UpdateByFid(action.agent.Root(), action.aih.Fid(), []byte(status.Uuid))
-		}
-		if status.Hash != nil {
-			buf := make([]byte, hex.EncodedLen(len(status.Hash)))
-			hex.Encode(buf, status.Hash)
-			fileid.Hash.UpdateByFid(action.agent.Root(), action.aih.Fid(), buf)
-		}
-		if status.Url != "" {
-			fileid.URL.UpdateByFid(action.agent.Root(), action.aih.Fid(), []byte(status.Url))
-		}
 		action.agent.stats.CompleteAction(action, int(status.Error))
-		err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
-		if err != nil {
-			audit.Logf("id:%d completion failed: %v", status.Id, err)
-			return true, err // Completed, but Failed. Internal HSM state is not updated
-		}
-		if action.aih.Action() == llapi.HsmActionArchive && action.agent.config.Snapshots.Enabled && status.Uuid != "" {
-			createSnapshot(action.agent.Root(), action.aih.ArchiveID(), action.aih.Fid(), []byte(status.Uuid))
-		}
+    // Don't .End cancels -- they have no file descriptors to close
+    if (action.Handle().Action() != llapi.HsmActionCancel) {
+      err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+      if err != nil {
+        audit.Logf("id:%d completion failed: %v", status.Id, err)
+        return true, err // Completed, but Failed. Internal HSM state is not updated
+      }
+    }
 		return true, nil // Completed
 	}
 	err := action.aih.Progress(status.Offset, status.Length, action.aih.Length(), 0)

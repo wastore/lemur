@@ -11,7 +11,7 @@ import (
 	"github.com/wastore/lemur/cmd/lhsmd/agent"
 	_ "github.com/wastore/lemur/cmd/lhsmd/transport/grpc"
 	"github.com/wastore/lemur/pkg/fsroot"
-	"github.com/wastore/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/hsm"
 
 	"golang.org/x/net/context"
 )

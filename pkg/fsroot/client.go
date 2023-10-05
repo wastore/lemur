@@ -5,8 +5,8 @@
 package fsroot
 
 import (
-	"github.com/wastore/go-lustre/fs"
-	"github.com/wastore/go-lustre/pkg/mntent"
+	"github.com/wastore/lemur/go-lustre/fs"
+	"github.com/wastore/lemur/go-lustre/pkg/mntent"
 )
 
 type (

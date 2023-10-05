@@ -157,7 +157,9 @@ func UnixError(err error) (ret int32) {
 
 	if errEx, ok := err.(ErrorEx); ok {
 		ret = errEx.ErrorCode()
-	} else {
+	} else if (err == context.Canceled) {
+    ret = int32(syscall.ECANCELED)
+  } else {
 		ret = int32(syscall.EINVAL)
 	}
 

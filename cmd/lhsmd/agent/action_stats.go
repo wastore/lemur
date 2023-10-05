@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/context"
@@ -79,6 +80,11 @@ func (as *ActionStats) StartAction(a *Action) {
 func (as *ActionStats) CompleteAction(a *Action, rc int) {
 	s := as.GetIndex(int(a.aih.ArchiveID()))
 	s.queueLength.Dec(1)
+  // Cancel's don't call CompleteAction for themselves.  The action being
+  // canceled must decrement on the cancel action's behalf.
+  if (rc == int(syscall.ECANCELED)) {
+    s.queueLength.Dec(1)
+  }
 	s.completed.UpdateSince(a.start)
 	atomic.AddUint64(&s.changes, 1)
 }

@@ -31,9 +31,9 @@ import (
 	"github.com/wastore/lemur/pkg/fsroot"
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/wastore/go-lustre/fs"
-	"github.com/wastore/go-lustre/hsm"
-	"github.com/wastore/go-lustre/llapi"
+	"github.com/wastore/lemur/go-lustre/fs"
+	"github.com/wastore/lemur/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/llapi"
 )
 
 type (

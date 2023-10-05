@@ -11,7 +11,7 @@ import (
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	copier "github.com/nakulkar-msft/copier/core"
+	copier "github.com/wastore/lemur/copier/core"
 	"github.com/wastore/lemur/cmd/util"
 )
 

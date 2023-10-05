@@ -23,7 +23,7 @@ import (
 	"github.com/intel-hpdd/logging/alert"
 	"github.com/intel-hpdd/logging/audit"
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/wastore/go-lustre/hsm"
+	"github.com/wastore/lemur/go-lustre/hsm"
 
 	// Register the supported transports
 	_ "github.com/wastore/lemur/cmd/lhsmd/transport/grpc"

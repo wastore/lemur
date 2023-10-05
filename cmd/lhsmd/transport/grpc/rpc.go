@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/intel-hpdd/logging/debug"
-	"github.com/wastore/go-lustre/llapi"
 	"github.com/wastore/lemur/cmd/lhsmd/agent"
 	pb "github.com/wastore/lemur/pdm"
 	"golang.org/x/net/context"
@@ -215,7 +214,7 @@ func (s *dmRPCServer) StatusStream(stream pb.DataMover_StatusStreamServer) error
 			continue
 		}
 
-		if ok && action.Handle().Action() !=  llapi.HsmActionCancel {
+		if ok {
 			_, err := action.Update(status)
 			if err != nil {
 				debug.Printf("Status update for 0x%x did not complete: %s", status.Id, err)
