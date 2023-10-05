@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -93,23 +92,6 @@ func (m *Mover) Start() {
 	util.Log(pipeline.LogDebug, fmt.Sprintf("%s started", m.name))
 	go m.SASManager()
 	debug.Printf("%s started", m.name)
-}
-
-func (m *Mover) fileIDtoContainerPath(fileID string) (string, string, error) {
-	var containerName, path string
-
-	u, err := url.ParseRequestURI(fileID)
-	if err == nil {
-		if u.Scheme != "az" {
-			return "", "", errors.Errorf("invalid URL in file_id %s", fileID)
-		}
-		path = u.Path[1:]
-		containerName = u.Host
-	} else {
-		path = m.destination(fileID)
-		containerName = m.config.Container
-	}
-	return containerName, path, nil
 }
 
 // getSASToken will block till a valid sas is returned or timeout after a minute
@@ -209,25 +191,33 @@ func (m *Mover) SASManager() {
 	}
 }
 
-func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
-  util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
-	rate.Mark(1)
-	start := time.Now()
-
-	// translate the fid into an actual path first
-	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
+func (m *Mover) PrimaryStrToPaths(primaryPath string) ([]string, error) {
+	// translate the fid into an actual path(s)
+	fidStr := strings.TrimPrefix(primaryPath, ".lustre/fid/")
 	fid, err := lustre.ParseFid(fidStr)
 	if err != nil {
-		return errors.Wrap(err, "failed to parse fid")
+		return nil, errors.Wrap(err, "failed to parse fid")
 	}
 	rootDir, err := fs.MountRoot(m.config.MountRoot)
 	if err != nil {
-		return errors.Wrap(err, "failed to find root dir")
+		return nil, errors.Wrap(err, "failed to find root dir")
 	}
 	fnames, err := status.FidPathnames(rootDir, fid)
 	if err != nil {
-		return errors.Wrap(err, "failed to get pathname")
+		return nil, errors.Wrap(err, "failed to get pathname")
 	}
+  return fnames, nil
+}
+
+func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
+  util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
+	rate.Mark(1)
+
+  fnames, err := m.PrimaryStrToPaths(action.PrimaryPath())
+	if err != nil {
+		return err
+	}
+
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
 	}
@@ -273,12 +263,12 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
-			time.Since(start),
+			time.Since(opStartTime),
 			action.PrimaryPath(),
 			m.config.Container, fileKey))
 	} else {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
-			time.Since(start),
+			time.Since(opStartTime),
 			action.PrimaryPath()))
 	}
 
@@ -291,20 +281,11 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-	// translate the fid into an actual path first
-	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
-	fid, err := lustre.ParseFid(fidStr)
+  fnames, err := m.PrimaryStrToPaths(action.PrimaryPath())
 	if err != nil {
-		return errors.Wrap(err, "failed to parse fid")
+		return err
 	}
-	rootDir, err := fs.MountRoot(m.config.MountRoot)
-	if err != nil {
-		return errors.Wrap(err, "failed to find root dir")
-	}
-	fnames, err := status.FidPathnames(rootDir, fid)
-	if err != nil {
-		return errors.Wrap(err, "failed to get pathname")
-	}
+
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
 	}
@@ -366,20 +347,11 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
   util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d remove %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-	// translate the fid into an actual path first
-	fidStr := strings.TrimPrefix(action.PrimaryPath(), ".lustre/fid/")
-	fid, err := lustre.ParseFid(fidStr)
+  fnames, err := m.PrimaryStrToPaths(action.PrimaryPath())
 	if err != nil {
-		return errors.Wrap(err, "failed to parse fid")
+		return err
 	}
-	rootDir, err := fs.MountRoot(m.config.MountRoot)
-	if err != nil {
-		return errors.Wrap(err, "failed to find root dir")
-	}
-	fnames, err := status.FidPathnames(rootDir, fid)
-	if err != nil {
-		return errors.Wrap(err, "failed to get pathname")
-	}
+
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
 	}
