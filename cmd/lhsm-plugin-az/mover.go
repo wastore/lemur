@@ -68,6 +68,7 @@ func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
 			MaxResponseHeaderBytes: 0,
 		},
 	}
+	clientOptions.Retry.MaxRetries = 20
 
 	return &Mover{
 		name:            fmt.Sprintf("az-%d", archiveID),
