@@ -72,6 +72,8 @@ type (
 		Data() []byte
 		// PrimaryPath returns the action item's primary file path
 		PrimaryPath() string
+		// FileID returns the action item's primary file path
+		FileID() string
 
 		// WritePath returns the action item's write path (e.g. for restores)
 		WritePath() string
@@ -206,6 +208,11 @@ func (a *dmAction) Data() []byte {
 // PrimaryPath returns the action item's primary file path
 func (a *dmAction) PrimaryPath() string {
 	return a.item.PrimaryPath
+}
+
+// FileID returns the action item's FileID
+func (a *dmAction) FileID() string {
+	return a.item.Uuid
 }
 
 // WritePath returns the action item's write path (e.g. for restores)

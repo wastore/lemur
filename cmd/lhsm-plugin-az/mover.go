@@ -191,6 +191,37 @@ func (m *Mover) SASManager() {
 	}
 }
 
+/*
+ * If fileID is explicitly provided, return that in a form amenable to be a blob destination, else do a conversion
+ * from primary string to path(s) and similarly return as a blob destination
+ */
+func (m *Mover) GetFileKey(primaryPath string, fileID string) (string, error) {
+
+  var fileKey string
+  if len(fileID) == 0 {
+    fnames, err := m.PrimaryStrToPaths(primaryPath)
+    if err != nil {
+      return "", err
+    }
+
+    if util.ShouldLog(pipeline.LogDebug) {
+      util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
+    }
+
+    if len(fnames) > 1 {
+      util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
+    }
+    fileKey = m.destination(fnames[0])
+  } else {
+    fileKey = m.destination(fileID)
+    if util.ShouldLog(pipeline.LogDebug) {
+      util.Log(pipeline.LogDebug, fmt.Sprintf("Using explicitly provided FileID rather than Path(s) from FS: %s", fileKey))
+    }
+  }
+
+  return fileKey, nil
+}
+
 func (m *Mover) PrimaryStrToPaths(primaryPath string) ([]string, error) {
 	// translate the fid into an actual path(s)
 	fidStr := strings.TrimPrefix(primaryPath, ".lustre/fid/")
@@ -210,23 +241,27 @@ func (m *Mover) PrimaryStrToPaths(primaryPath string) ([]string, error) {
 }
 
 func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
+  var sourcePath string
+
   util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-  fnames, err := m.PrimaryStrToPaths(action.PrimaryPath())
-	if err != nil {
-		return err
-	}
+  fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+  if err != nil {
+    return err
+  }
 
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
-	}
-
-	if len(fnames) > 1 {
-		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
-	}
-	fileID := fnames[0]
-	fileKey := m.destination(fileID)
+  // If FileID is explicitly given, then we need to call back into GetFileKey to resolve from FID to path for our source
+  // file.  If it is not given, then we've already done this to resolve fileKey, so don't bother doing it again
+  // We only need to do this for archive as delete doesn't need to do anything if FileID is given, and restore relies
+  // upon action.WritePath rather than deriving that from PrimaryPath (FID).
+  sourcePath = fileKey
+  if len(action.FileID()) != 0 {
+    sourcePath, err = m.GetFileKey(action.PrimaryPath(), "")
+    if err != nil {
+      return err
+    }
+  }
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
@@ -244,8 +279,9 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 		ContainerURL: cURL,
 		ResourceSAS:  sas,
 		MountRoot:    m.config.MountRoot,
+		FID:          action.PrimaryPath(),
 		BlobName:     fileKey,
-		SourcePath:   action.PrimaryPath(),
+		SourcePath:   sourcePath,
 		BlockSize:    m.config.UploadPartSize,
 		ExportPrefix: m.config.ExportPrefix,
 		HTTPClient:   m.httpClient,
@@ -281,20 +317,10 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-  fnames, err := m.PrimaryStrToPaths(action.PrimaryPath())
-	if err != nil {
-		return err
-	}
-
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
-	}
-
-	if len(fnames) > 1 {
-		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
-	}
-	fileID := fnames[0]
-	fileKey := m.destination(fileID)
+  fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+  if err != nil {
+    return err
+  }
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
@@ -347,20 +373,10 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
   util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d remove %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-  fnames, err := m.PrimaryStrToPaths(action.PrimaryPath())
-	if err != nil {
-		return err
-	}
-
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
-	}
-
-	if len(fnames) > 1 {
-		util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
-	}
-	fileID := fnames[0]
-	fileKey := m.destination(fileID)
+  fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+  if err != nil {
+    return err
+  }
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
