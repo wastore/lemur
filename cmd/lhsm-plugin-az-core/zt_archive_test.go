@@ -30,7 +30,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	file, err := os.Open(filePath)
 	c.Assert(err, chk.IsNil)
 	defer file.Close()
-	defer os.Remove(fileName)
+	defer os.Remove(filePath)
 
 	// Set up test container
 	bsu := getBSU()
@@ -46,7 +46,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	count, err := Archive(context.Background(), copier, ArchiveOptions{
 		ContainerURL: containerURL,
 		BlobName:     fileName,
-		SourcePath:   filePath,
+		SourcePath:   fileName,
 		BlockSize:    int64(blockSize),
 		MountRoot:    os.TempDir(),
 		HTTPClient:   &http.Client{},
@@ -60,7 +60,7 @@ func performUploadAndDownloadFileTest(c *chk.C, fileSize, blockSize, parallelism
 	destFile, err := os.Create(destFilePath)
 	c.Assert(err, chk.Equals, nil)
 	defer destFile.Close()
-	defer os.Remove(destFileName)
+	defer os.Remove(destFilePath)
 
 	blobName := fileName
 	// invoke restore to download the file back
@@ -110,7 +110,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	file, err := os.Open(filePath)
 	c.Assert(err, chk.IsNil)
 	defer file.Close()
-	defer os.Remove(fileName)
+	defer os.Remove(filePath)
 
 	// Set up test container
 	bsu := getBSU()
@@ -124,7 +124,7 @@ func (_ *cmdIntegrationSuite) TestPreservePermsRecursive(c *chk.C) {
 	count, err := Archive(context.Background(), copier, ArchiveOptions{
 		ContainerURL: containerURL,
 		BlobName:     fileName,
-		SourcePath:   filePath,
+		SourcePath:   fileName,
 		BlockSize:    int64(2048), //2M
 		MountRoot:    tempDir,
 		HTTPClient:   &http.Client{},

@@ -28,16 +28,17 @@ type (
 
 	// Action represents an HSM action
 	Action struct {
-		id    ActionID
-		aih   hsm.ActionHandle
-		agent *HsmAgent
-		start time.Time
-		Data  []byte
+		id     ActionID
+		aih    hsm.ActionHandle
+		agent  *HsmAgent
+		start  time.Time
+		FileID string
+		Data   []byte
 	}
 
 	// ActionData is extra data passed to the Agent by policy engine
 	ActionData struct {
-		FileID    []byte `json:"file_id"`
+		FileID    string `json:"file_id"`
 		MoverData []byte `json:"mover_data"`
 	}
 )
@@ -83,7 +84,7 @@ func (action *Action) ID() ActionID {
 
 // MarshalActionData returns an initallized and marshalled ActionData struct. The moverData
 // value is also marshalled before adding it to the ActionData.
-func MarshalActionData(fileID []byte, moverData interface{}) ([]byte, error) {
+func MarshalActionData(fileID string, moverData interface{}) ([]byte, error) {
 	mdata, err := json.Marshal(moverData)
 	if err != nil {
 		return nil, err
@@ -110,6 +111,12 @@ func (action *Action) Prepare() error {
 	if len(data.MoverData) > 0 {
 		action.Data = data.MoverData
 	}
+
+	if len(data.FileID) > 0 {
+		debug.Printf("found fileID from user: %v %d", data.FileID, len(data.FileID))
+		action.FileID = data.FileID
+	}
+
 	return nil
 }
 
@@ -122,6 +129,7 @@ func (action *Action) AsMessage() *pb.ActionItem {
 		Offset:      action.aih.Offset(),
 		Length:      action.aih.Length(),
 		Data:        action.Data,
+		Uuid:        action.FileID,
 	}
 
 	dfid, err := action.aih.DataFid()

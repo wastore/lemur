@@ -23,6 +23,7 @@ type ArchiveOptions struct {
 	ContainerURL *container.Client
 	ResourceSAS  string
 	MountRoot    string
+	FID          string
 	BlobName     string
 	SourcePath   string
 	BlockSize    int64
@@ -78,9 +79,9 @@ func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFil
 
 // Archive copies local file to HNS
 func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64, error) {
-	logPath := o.SourcePath //hide paths till debug mode
+	logPath := o.FID //hide paths till debug mode
 	if util.ShouldLog(pipeline.LogDebug) {
-		logPath = o.BlobName
+		logPath = o.SourcePath
 	}
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", logPath))
@@ -109,7 +110,7 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 		}(filepath, blobpath)
 	}
 
-	filepath = path.Join(o.MountRoot, o.BlobName)
+	filepath = path.Join(o.MountRoot, o.SourcePath)
 	blobpath = path.Join(o.ExportPrefix, o.BlobName)
 	blob := o.ContainerURL.NewBlockBlobClient(blobpath)
 
