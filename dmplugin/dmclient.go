@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	stddbg "runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -32,21 +34,22 @@ type (
 
 	// DataMoverClient is the data mover client to the HSM agent
 	DataMoverClient struct {
-		plugin    *Plugin
-		rpcClient pb.DataMoverClient
-		status    chan *pb.ActionStatus
-		mover     Mover
-		config    *Config
-		actions   map[pb.Command]ActionHandler
-		cancelMap sync.Map
+		plugin               *Plugin
+		rpcClient            pb.DataMoverClient
+		status               chan *pb.ActionStatus
+		mover                Mover
+		config               *Config
+		actions              map[pb.Command]ActionHandler
+		cancelMap            sync.Map
+		requestOverflowCount uint32
 	}
 
 	// Config defines configuration for a DatamMoverClient
 	Config struct {
-		Mover      Mover
-		NumThreads int
-		ArchiveID  uint32
-		ActionQueueSize int
+		Mover                 Mover
+		NumThreads            int
+		ArchiveID             uint32
+		ActionQueueSize       int
 		ProgressUpdateMinutes int
 	}
 
@@ -111,11 +114,9 @@ type key int
 var handleKey key
 
 const (
-	defaultNumThreads = 4
-)
-
-const (
+	defaultNumThreads            = 4
 	defaultProgressUpdateMinutes = 3
+	requestOverflowLimit         = 10
 )
 
 func withHandle(ctx context.Context, handle *pb.Handle) context.Context {
@@ -368,9 +369,9 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 
 			item.TryCount = 0 //first try
 			c, cancel := context.WithCancel(ctx)
-			action := &dmAction{ status: dm.status, item: item, ctx: c, }
+			action := &dmAction{status: dm.status, item: item, ctx: c}
 
-			if (item.Op == pb.Command_CANCEL) {
+			if item.Op == pb.Command_CANCEL {
 				cancelAction(action)
 			} else {
 				/* if actions is full, we'll get to default clause */
@@ -380,6 +381,12 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 					dm.cancelMap.Store(action.PrimaryPath(), cancel)
 				default:
 					alert.Warnf("Request limit reached. Failing action %s, command %d", action.PrimaryPath(), action.item.Op)
+					atomic.AddUint32(&dm.requestOverflowCount, 1)
+					if atomic.LoadUint32(&dm.requestOverflowCount) >= requestOverflowLimit {
+						/* Going to panic so set runtime to dump all goroutines */
+						stddbg.SetTraceback("all")
+						panic("Too many Copytool Busy Errors. Panicking...")
+					}
 					action.Finish(util.CopytoolBusy)
 				}
 			}
