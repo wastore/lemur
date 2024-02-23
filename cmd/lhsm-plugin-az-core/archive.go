@@ -15,21 +15,22 @@ import (
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	copier "github.com/wastore/lemur/copier/core"
 	"github.com/wastore/lemur/cmd/util"
+	copier "github.com/wastore/lemur/copier/core"
 )
 
 type ArchiveOptions struct {
-	ContainerURL *container.Client
-	ResourceSAS  string
-	MountRoot    string
-	FID          string
-	BlobName     string
-	SourcePath   string
-	BlockSize    int64
-	ExportPrefix string
-	HTTPClient   *http.Client
-	OpStartTime  time.Time
+	ContainerURL          *container.Client
+	ResourceSAS           string
+	MountRoot             string
+	FID                   string
+	BlobName              string
+	SourcePath            string
+	BlockSize             int64
+	ExportPrefix          string
+	HTTPClient            *http.Client
+	OpStartTime           time.Time
+	GetNewStorageClients  func(string) (*container.Client, *blockblob.Client, error)
 }
 
 func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFileOptions, error) {
@@ -107,9 +108,20 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 
 			blob := o.ContainerURL.NewBlockBlobClient(blobpath)
 			_, err = blob.UploadBuffer(ctx, nil, options)
+			if util.ShouldRefreshCreds(err) {
+				o.ContainerURL, blob, err = o.GetNewStorageClients(blobpath)
+				if err != nil {
+					util.Log(pipeline.LogError, fmt.Sprintf("Failed to get new block blob client for %s: %v", blobpath, err))
+					return
+				}
+				blob.UploadBuffer(ctx, nil, options)
+			}
 		}(filepath, blobpath)
 	}
 
+	// TODO: What is the purpose of the sync.WaitGroup? Nothing waits for the completion
+	// of those go routines that upload buffers. Maybe it doesn't matter since blob directories
+	// are just 'place holders'?
 	filepath = path.Join(o.MountRoot, o.SourcePath)
 	blobpath = path.Join(o.ExportPrefix, o.BlobName)
 	blob := o.ContainerURL.NewBlockBlobClient(blobpath)
@@ -119,7 +131,7 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 		return 0, err
 	}
 
-	err = copier.UploadFile(ctx, blob, filepath, options)
+	err = copier.UploadFile(ctx, blob, filepath, blobpath, options, o.GetNewStorageClients)
 
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Archiving file %v: Failed %v", logPath, err))
@@ -127,6 +139,14 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 	}
 
 	props, err := blob.GetProperties(ctx, nil)
+	if util.ShouldRefreshCreds(err) {
+		_, blob, err = o.GetNewStorageClients(blobpath)
+		if err != nil {
+			util.Log(pipeline.LogError, fmt.Sprintf("Failed to get new storage clients for %s: %v", blobpath, err))
+			return 0, err
+		}
+		props, err = blob.GetProperties(ctx, nil)
+	}
 	if err != nil {
 		util.Log(pipeline.LogError,
 			fmt.Sprintf("Archiving file %v: Could not get destination length %s",

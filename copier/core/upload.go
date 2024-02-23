@@ -28,13 +28,15 @@ import (
 	"os"
 	"sync"
 
+	"github.com/intel-hpdd/logging/debug"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/google/uuid"
+	"github.com/wastore/lemur/cmd/util"
 )
 
 const (
-    maxUploadBlobBytes = 5000 * 1024 * 1024
+	maxUploadBlobBytes = 5000 * 1024 * 1024
 )
 
 type nopCloser struct {
@@ -91,7 +93,9 @@ func getCommitBlockListOptions(o *blockblob.UploadFileOptions) *blockblob.Commit
 func (c *copier) UploadFile(ctx context.Context,
 	b *blockblob.Client,
 	filepath string,
-	o *blockblob.UploadFileOptions) error {
+	blobPath string,
+	o *blockblob.UploadFileOptions,
+	getNewStorageClientsCb NewStorageClientsCb) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -121,12 +125,20 @@ func (c *copier) UploadFile(ctx context.Context,
 		return err
 	}
 
-	if (o.BlockSize >= fileSize && fileSize <= maxUploadBlobBytes) { //perform a single thread copy here.
+	if o.BlockSize >= fileSize && fileSize <= maxUploadBlobBytes { //perform a single thread copy here.
 		_, err := b.Upload(ctx, newPacedReadSeekCloser(ctx, c.pacer, file), getUploadOptions(o))
+		if util.ShouldRefreshCreds(err) {
+			_, b, err = getNewStorageClientsCb(blobPath)
+			if err != nil {
+				return err
+			}
+			_, err = b.Upload(ctx, newPacedReadSeekCloser(ctx, c.pacer, file), getUploadOptions(o))
+
+		}
 		return err
 	}
 
-	return c.uploadInternal(ctx, cancel, b, file, fileSize, o)
+	return c.uploadInternal(ctx, cancel, b, file, fileSize, blobPath, o, getNewStorageClientsCb)
 }
 
 func (c *copier) uploadInternal(ctx context.Context,
@@ -134,7 +146,9 @@ func (c *copier) uploadInternal(ctx context.Context,
 	b *blockblob.Client,
 	file io.ReadSeekCloser,
 	fileSize int64,
-	o *blockblob.UploadFileOptions) error {
+	blobPath string,
+	o *blockblob.UploadFileOptions,
+	getNewStorageClientsCb NewStorageClientsCb) error {
 	// short hand for routines to report and error
 
 	errorChannel := make(chan error)
@@ -160,10 +174,29 @@ func (c *copier) uploadInternal(ctx context.Context,
 		blockNames[blockIndex] = blockName
 
 		_, err := b.StageBlock(ctx, blockNames[blockIndex], body, getStageBlockOptions(o))
+		if util.ShouldRefreshCreds(err) {
+			_, b, err = getNewStorageClientsCb(blobPath)
+			if err != nil {
+				debug.Printf("Failed to get new storage clients: %v\n", err)
+				setErrorIfNotCancelled(err)
+				return
+			}
+			// Need to rewind the body in order to restart staging the block
+			_, err = body.Seek(0, io.SeekStart)
+			if err != nil {
+				debug.Printf("Failed to seek to start of body: %v\n", err)
+				setErrorIfNotCancelled(err)
+				return
+			}
+			_, err = b.StageBlock(ctx, blockNames[blockIndex], body, getStageBlockOptions(o))
+			if err != nil {
+				debug.Printf("Failed to stage block %v: %v", blockIndex, err)
+			}
+		}
 		if err != nil {
 			setErrorIfNotCancelled(err)
+			return
 		}
-
 		//Return the buffer
 		c.slicePool.ReturnSlice(buff)
 		c.cacheLimiter.Remove(int64(len(buff)))
@@ -180,6 +213,9 @@ func (c *copier) uploadInternal(ctx context.Context,
 		cancel()
 	}()
 
+	debug.Printf("Block Size: %v Block Count: %v\n", o.BlockSize, numBlocks)
+	// NOTE: Use of uint16 here is fine as the maximum number of blocks in a block blob
+	// is 50,000 and the copier picks a chunk size to stay below this value.
 	for blockNum := uint16(0); blockNum < numBlocks; blockNum++ {
 		if ctx.Err() != nil { // If the context is close, do not schedule any more.
 			break
@@ -226,6 +262,12 @@ func (c *copier) uploadInternal(ctx context.Context,
 	}
 
 	_, err = b.CommitBlockList(ctx, blockNames, getCommitBlockListOptions(o))
-
+	if util.ShouldRefreshCreds(err) {
+		_, b, err = getNewStorageClientsCb(blobPath)
+		if err != nil {
+			return err
+		}
+		_, err = b.CommitBlockList(ctx, blockNames, getCommitBlockListOptions(o))
+	}
 	return err
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	copier "github.com/wastore/lemur/copier/core"
 	"github.com/wastore/lemur/cmd/util"
@@ -23,6 +24,7 @@ type RestoreOptions struct {
 	ExportPrefix    string
 	HTTPClient      *http.Client
 	OpStartTime     time.Time
+	GetNewStorageClients func(string) (*container.Client, *blockblob.Client, error)
 }
 
 var maxRetryPerDownloadBody = 5
@@ -58,7 +60,7 @@ func Restore(ctx context.Context, copier copier.Copier, o RestoreOptions) (int64
 		BlockSize: o.BlockSize,
 		Progress: progressFunc,
 	}
-	size, err := copier.DownloadFile(ctx, b, o.DestinationPath, &options)
+	size, err := copier.DownloadFile(ctx, b, o.BlobName, o.DestinationPath, &options, o.GetNewStorageClients)
 	if err != nil {
 		util.Log(pipeline.LogError, fmt.Sprintf("Restore failed: %v", err))
 		return 0, err

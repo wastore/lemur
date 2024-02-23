@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	copier "github.com/wastore/lemur/copier/core"
 	core "github.com/wastore/lemur/cmd/lhsm-plugin-az-core"
 	"github.com/wastore/lemur/cmd/util"
+	copier "github.com/wastore/lemur/copier/core"
 
 	"github.com/pkg/errors"
 
@@ -139,10 +139,13 @@ func (m *Mover) SASManager() {
 		select {
 		case <-time.After(defaultRefreshInterval): // we always try to refresh
 		case reqCtx := <-m.forceSASRefresh:
+			debug.Printf("Trying to force SAS refresh\n")
 			if reqCtx.Before(m.config.SASContext) {
+				debug.Printf("Not refreshing SAS token on force request!\n")
 				//Nothing to be done, we've already updated sas.
 				continue
 			} // else we refresh sas
+			debug.Printf("Going to try to force SAS token\n")
 		case retChan := <-m.getSAS: //lowest priority is to return SAS
 			retChan <- m.config.AzStorageSAS
 			continue
@@ -198,29 +201,29 @@ func (m *Mover) SASManager() {
  */
 func (m *Mover) GetFileKey(primaryPath string, fileID string) (string, error) {
 
-  var fileKey string
-  if len(fileID) == 0 {
-    fnames, err := m.PrimaryStrToPaths(primaryPath)
-    if err != nil {
-      return "", err
-    }
+	var fileKey string
+	if len(fileID) == 0 {
+		fnames, err := m.PrimaryStrToPaths(primaryPath)
+		if err != nil {
+			return "", err
+		}
 
-    if util.ShouldLog(pipeline.LogDebug) {
-      util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
-    }
+		if util.ShouldLog(pipeline.LogDebug) {
+			util.Log(pipeline.LogDebug, fmt.Sprintf("Path(s) on FS: %s", strings.Join(fnames, ", ")))
+		}
 
-    if len(fnames) > 1 {
-      util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
-    }
-    fileKey = m.destination(fnames[0])
-  } else {
-    fileKey = m.destination(fileID)
-    if util.ShouldLog(pipeline.LogDebug) {
-      util.Log(pipeline.LogDebug, fmt.Sprintf("Using explicitly provided FileID rather than Path(s) from FS: %s", fileKey))
-    }
-  }
+		if len(fnames) > 1 {
+			util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
+		}
+		fileKey = m.destination(fnames[0])
+	} else {
+		fileKey = m.destination(fileID)
+		if util.ShouldLog(pipeline.LogDebug) {
+			util.Log(pipeline.LogDebug, fmt.Sprintf("Using explicitly provided FileID rather than Path(s) from FS: %s", fileKey))
+		}
+	}
 
-  return fileKey, nil
+	return fileKey, nil
 }
 
 func (m *Mover) PrimaryStrToPaths(primaryPath string) ([]string, error) {
@@ -238,31 +241,54 @@ func (m *Mover) PrimaryStrToPaths(primaryPath string) ([]string, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get pathname")
 	}
-  return fnames, nil
+	return fnames, nil
+}
+
+// Create a new container client and block blob client with the current SAS token
+//
+// param: blobpath	path of blob being accessed
+func (m *Mover) GetNewStorageClients(blobpath string) (*container.Client, *blockblob.Client, error) {
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Refreshing storage clients."))
+	res := m.refreshCredential(time.Now())
+	debug.Printf("Status of SAS Token Refresh: %v\n", res)
+	sas, err := m.getSASToken()
+	if err != nil {
+		util.Log(pipeline.LogError, fmt.Sprintf("Failed to get SAS token during storage client refresh: %v", err))
+		return nil, nil, err
+	}
+
+	container_url := m.config.ContainerURL() + "?" + sas
+	container_client, err := container.NewClientWithNoCredential(container_url, m.clientOptions)
+	if err != nil {
+		util.Log(pipeline.LogError, fmt.Sprintf("Failed to create new container client: %v", err))
+		return nil, nil, err
+	}
+	util.Log(pipeline.LogDebug, fmt.Sprintf("Refreshed storage clients."))
+	return container_client, container_client.NewBlockBlobClient(blobpath), nil
 }
 
 func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
-  var sourcePath string
+	var sourcePath string
 
-  util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
+	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-  fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
-  if err != nil {
-    return err
-  }
+	fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+	if err != nil {
+		return err
+	}
 
-  // If FileID is explicitly given, then we need to call back into GetFileKey to resolve from FID to path for our source
-  // file.  If it is not given, then we've already done this to resolve fileKey, so don't bother doing it again
-  // We only need to do this for archive as delete doesn't need to do anything if FileID is given, and restore relies
-  // upon action.WritePath rather than deriving that from PrimaryPath (FID).
-  sourcePath = fileKey
-  if len(action.FileID()) != 0 {
-    sourcePath, err = m.GetFileKey(action.PrimaryPath(), "")
-    if err != nil {
-      return err
-    }
-  }
+	// If FileID is explicitly given, then we need to call back into GetFileKey to resolve from FID to path for our source
+	// file.  If it is not given, then we've already done this to resolve fileKey, so don't bother doing it again
+	// We only need to do this for archive as delete doesn't need to do anything if FileID is given, and restore relies
+	// upon action.WritePath rather than deriving that from PrimaryPath (FID).
+	sourcePath = fileKey
+	if len(action.FileID()) != 0 {
+		sourcePath, err = m.GetFileKey(action.PrimaryPath(), "")
+		if err != nil {
+			return err
+		}
+	}
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
@@ -277,16 +303,17 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	total, err := core.Archive(ctx, m.copier, core.ArchiveOptions{
-		ContainerURL: cURL,
-		ResourceSAS:  sas,
-		MountRoot:    m.config.MountRoot,
-		FID:          action.PrimaryPath(),
-		BlobName:     fileKey,
-		SourcePath:   sourcePath,
-		BlockSize:    m.config.UploadPartSize,
-		ExportPrefix: m.config.ExportPrefix,
-		HTTPClient:   m.httpClient,
-		OpStartTime:  opStartTime,
+		ContainerURL:          cURL,
+		ResourceSAS:           sas,
+		MountRoot:             m.config.MountRoot,
+		FID:                   action.PrimaryPath(),
+		BlobName:              fileKey,
+		SourcePath:            sourcePath,
+		BlockSize:             m.config.UploadPartSize,
+		ExportPrefix:          m.config.ExportPrefix,
+		HTTPClient:            m.httpClient,
+		OpStartTime:           opStartTime,
+		GetNewStorageClients:  m.GetNewStorageClients,
 	})
 
 	if util.ShouldRefreshCreds(err) {
@@ -318,10 +345,10 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-  fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
-  if err != nil {
-    return err
-  }
+	fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+	if err != nil {
+		return err
+	}
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
@@ -336,12 +363,13 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	}
 
 	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
-		ContainerURL:    cURL,
-		BlobName:        fileKey,
-		DestinationPath: action.WritePath(),
-		BlockSize:       m.config.UploadPartSize,
-		ExportPrefix:    m.config.ExportPrefix,
-		HTTPClient:      m.httpClient,
+		ContainerURL:           cURL,
+		BlobName:               fileKey,
+		DestinationPath:        action.WritePath(),
+		BlockSize:              m.config.UploadPartSize,
+		ExportPrefix:           m.config.ExportPrefix,
+		HTTPClient:             m.httpClient,
+		GetNewStorageClients:   m.GetNewStorageClients,
 	})
 
 	if util.ShouldRefreshCreds(err) {
@@ -371,13 +399,13 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 
 // Remove fulfills an HSM Remove request
 func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
-  util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d remove %s", m.name, action.ID(), action.PrimaryPath()))
+	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d remove %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-  fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
-  if err != nil {
-    return err
-  }
+	fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+	if err != nil {
+		return err
+	}
 
 	opStartTime := time.Now()
 	sas, err := m.getSASToken()
