@@ -201,8 +201,7 @@ func (c *copier) uploadInternal(ctx context.Context,
 		// buffer is full. Since the buffer is sized to match the block
 		// size or be exactly the remaining number of bytes, io.EOF is
 		// not handled.
-		var n int
-		if n, err = io.ReadFull(file, buff); err != nil {
+		if _, err = io.ReadFull(file, buff); err != nil {
 			setErrorIfNotCancelled(err)
 			break
 		}
