@@ -26,8 +26,10 @@ import (
 	"os"
 	"sync"
 
+	"github.com/intel-hpdd/logging/debug"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
+	"github.com/wastore/lemur/cmd/util"
 )
 
 func downloadFileOptionsToStreamOptions(f *blob.DownloadFileOptions) *blob.DownloadStreamOptions {
@@ -45,8 +47,10 @@ func downloadFileOptionsToStreamOptions(f *blob.DownloadFileOptions) *blob.Downl
 func (c *copier) DownloadFile(
 	ctx context.Context,
 	bb *blockblob.Client,
+	blobPath string,
 	filepath string,
-	o *blob.DownloadFileOptions) (int64, error) {
+	o *blob.DownloadFileOptions,
+	getNewStorageClientsCb NewStorageClientsCb) (int64, error) {
 
 	if o == nil {
 		o = &blob.DownloadFileOptions{}
@@ -97,6 +101,18 @@ func (c *copier) DownloadFile(
 
 	if (o.BlockSize >= size) { //perform a single thread copy here.
 		dr, err := b.DownloadStream(ctx, downloadFileOptionsToStreamOptions(o))
+		if util.ShouldRefreshCreds(err) {
+			_, bb, err = getNewStorageClientsCb(blobPath)
+			if err != nil {
+				debug.Printf("Failed to get new storage clients: %v\n", err)
+				return 0, err
+			}
+			b = bb.BlobClient()
+			dr, err = b.DownloadStream(ctx, downloadFileOptionsToStreamOptions(o))
+			if err != nil {
+				debug.Printf("Failed to get new download stream: %v\n", err)
+			}
+		}
 		if err != nil {
 			return 0, err
 		}
@@ -106,16 +122,18 @@ func (c *copier) DownloadFile(
 		return file.ReadFrom(newPacedReader(ctx, c.pacer, body))
 	}
 
-	return c.downloadInternal(ctx, cancel, b, file, size, o)
+	return c.downloadInternal(ctx, cancel, b, blobPath, file, size, o, getNewStorageClientsCb)
 }
 
 func (c *copier) downloadInternal(
 	ctx context.Context,
 	cancel context.CancelFunc,
 	b *blob.Client,
+	blobPath string,
 	file *os.File,
 	fileSize int64,
-	o *blob.DownloadFileOptions) (int64, error) {
+	o *blob.DownloadFileOptions,
+	getNewStorageClientsCb NewStorageClientsCb) (int64, error) {
 	// short hand for routines to report and error
 	errorChannel := make(chan error)
 	setErrorIfNotCancelled := func(err error) {
@@ -137,6 +155,10 @@ func (c *copier) downloadInternal(
 		blocks[i] = make(chan []byte)
 	}
 
+	debug.Printf("Block Size: %v Blocks: %v\n", o.BlockSize, numBlocks)
+	// TODO: This is an odd way to do what could be multiple writers to Lustre
+	// with pwrite. Each block must wait for the previous block to be fetched
+	// from blob. Maybe this is to bound the CPU load?
 	totalWrite := int64(0)
 	wg.Add(1) // for the writer below
 	go func() {
@@ -148,10 +170,12 @@ func (c *copier) downloadInternal(
 			case buff := <-block:
 				n, err := file.Write(buff)
 				if err != nil {
+					debug.Printf("File write error: %v\n", err)
 					setErrorIfNotCancelled(err)
 					return
 				}
 				if n != len(buff) {
+					debug.Printf("Short Write error. Wrote: %v Expected: %v\n", n, len(buff))
 					setErrorIfNotCancelled(io.ErrShortWrite)
 					return
 				}
@@ -166,6 +190,7 @@ func (c *copier) downloadInternal(
 		}
 
 		if totalWrite != count {
+			debug.Printf("Total short write. Wrote: %v Expected: %v\n", totalWrite, count)
 			setErrorIfNotCancelled(io.ErrShortWrite)
 		}
 		file.Sync()
@@ -181,7 +206,27 @@ func (c *copier) downloadInternal(
 		options := downloadFileOptionsToStreamOptions(o)
 		options.Range = blob.HTTPRange{Offset: offset, Count: currentBlockSize}
 		dr, err := b.DownloadStream(ctx, options)
-
+		if err != nil {
+			debug.Printf("Download Stream Error: %v\n", err)
+		}
+		if util.ShouldRefreshCreds(err) {
+			// Need a second error variable here otherwise := will create an
+			// error variable local to this scope and not overwrite the outer
+			// err.
+			//
+			// The outer err is overwritten later in this scope.
+			_, bb, err2 := getNewStorageClientsCb(blobPath)
+			if err2 != nil {
+				debug.Printf("Failed to get new storage clients: %v\n", err2)
+				setErrorIfNotCancelled(err2)
+				return
+			}
+			b = bb.BlobClient()
+			dr, err = b.DownloadStream(ctx, options)
+			if err != nil {
+				debug.Printf("Failed to get new download stream: %v\n", err)
+			}
+		}
 		if err != nil {
 			setErrorIfNotCancelled(err)
 			return
@@ -191,11 +236,39 @@ func (c *copier) downloadInternal(
 		defer body.Close()
 
 		if err := c.pacer.RequestTrafficAllocation(ctx, int64(len(buff))); err != nil {
+			debug.Printf("Request Traffic Allocation Error: %v\n", err)
 			setErrorIfNotCancelled(err)
 			return
 		}
 
 		_, err = io.ReadFull(body, buff)
+		// Restart the whole read if we failed with expired credentials
+		if util.ShouldRefreshCreds(err) {
+			// Need a second error variable here otherwise := will create an
+			// error variable local to this scope and not overwrite the outer
+			// err.
+			//
+			// The outer err is overwritten later in this scope.
+			_, bb, err2 := getNewStorageClientsCb(blobPath)
+			if err2 != nil {
+				debug.Printf("Failed to get new storage clients: %v\n", err2)
+				setErrorIfNotCancelled(err2)
+				return
+			}
+			b = bb.BlobClient()
+			dr, err = b.DownloadStream(ctx, options)
+			if err != nil {
+				debug.Printf("Failed to get new download stream: %v\n", err)
+				setErrorIfNotCancelled(err)
+				return
+			}
+			body = dr.NewRetryReader(ctx, &o.RetryReaderOptionsPerBlock)
+			_, err = io.ReadFull(body, buff)
+			if err != nil {
+				debug.Printf("Failed to read body from buff: %v\n", err)
+			}
+		}
+
 		if err != nil {
 			setErrorIfNotCancelled(err)
 			return

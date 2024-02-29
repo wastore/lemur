@@ -26,13 +26,18 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 )
 
 var ErrCopierClosed = errors.New("copier closed")
 
+// A callback to get a new container and a new block blob client in case the
+// previous client was tied to an expired SAS token
+type NewStorageClientsCb func(string) (*container.Client, *blockblob.Client, error)
+
 type Copier interface {
-	DownloadFile(ctx context.Context, bb *blockblob.Client, filepath string, o *blob.DownloadFileOptions) (int64, error)
-	UploadFile(ctx context.Context, b *blockblob.Client, filepath string, o *blockblob.UploadFileOptions) error
+	DownloadFile(ctx context.Context, bb *blockblob.Client, blobpath string, filepath string, o *blob.DownloadFileOptions, getNewStorageClientsCb NewStorageClientsCb) (int64, error)
+	UploadFile(ctx context.Context, b *blockblob.Client, filepath string, blobpath string, o *blockblob.UploadFileOptions, getNewStorageClientsCb NewStorageClientsCb) error
 	Close()
 }
 
