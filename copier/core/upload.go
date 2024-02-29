@@ -23,7 +23,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"io"
 	"os"
 	"sync"
@@ -31,6 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/google/uuid"
+	"github.com/intel-hpdd/logging/debug"
 )
 
 const (
@@ -150,6 +150,7 @@ func (c *copier) uploadInternal(ctx context.Context,
 
 	blockNames := make([]string, numBlocks)
 
+	debug.Printf("Num Blocks: %v Block Size: %v\n", numBlocks, o.BlockSize)
 	uploadBlock := func(buff []byte, blockIndex uint16) {
 		defer wg.Done()
 		if ctx.Err() != nil {
@@ -196,11 +197,12 @@ func (c *copier) uploadInternal(ctx context.Context,
 		}
 		buff := c.slicePool.RentSlice(currBlockSize)
 
-		if n, err := file.Read(buff); err != nil {
+		// io.ReadFull will read from the given io.Reader until the given
+		// buffer is full. Since the buffer is sized to match the block
+		// size or be exactly the remaining number of bytes, io.EOF is
+		// not handled.
+		if _, err = io.ReadFull(file, buff); err != nil {
 			setErrorIfNotCancelled(err)
-			break
-		} else if n != int(currBlockSize) {
-			setErrorIfNotCancelled(errors.New("invalid read"))
 			break
 		}
 
