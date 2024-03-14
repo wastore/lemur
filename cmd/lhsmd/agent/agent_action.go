@@ -163,6 +163,11 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
     // Don't .End cancels -- they have no file descriptors to close
     if (action.Handle().Action() != llapi.HsmActionCancel) {
       err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+	  if err == syscall.Errno(syscall.EBUSY) {
+		  // Received an inexplicable ebusy -- retry
+		  audit.Logf("id:%d completion failed: %v. Retrying.", status.Id, err)
+		  err = action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+	  }
       if err != nil {
         audit.Logf("id:%d completion failed: %v", status.Id, err)
         return true, err // Completed, but Failed. Internal HSM state is not updated
