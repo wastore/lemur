@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+	"syscall"
 
 	"github.com/pkg/errors"
 
