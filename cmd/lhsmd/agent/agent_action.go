@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
-	"time"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -164,10 +164,12 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
     // Don't .End cancels -- they have no file descriptors to close
     if (action.Handle().Action() != llapi.HsmActionCancel) {
       err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
-	  if err == syscall.Errno(syscall.EBUSY) {
+	  if errors.Is(err, syscall.EBUSY) {
 		  // Received an inexplicable ebusy -- retry
 		  audit.Logf("id:%d completion failed: %v. Retrying.", status.Id, err)
 		  err = action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+	  } else {
+		  audit.Logf("id:%d mismatch on the error...", status.Id)
 	  }
       if err != nil {
         audit.Logf("id:%d completion failed: %v", status.Id, err)
