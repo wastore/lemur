@@ -161,21 +161,23 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 		debug.Printf("id:%d completed status: %v in %v", status.Id, status.Error, duration)
 
 		action.agent.stats.CompleteAction(action, int(status.Error))
-    // Don't .End cancels -- they have no file descriptors to close
-    if (action.Handle().Action() != llapi.HsmActionCancel) {
-      err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
-	  if errors.Is(err, syscall.EBUSY) {
-		  // Received an inexplicable ebusy -- retry
-		  audit.Logf("id:%d completion failed: %v. Retrying.", status.Id, err)
-		  err = action.aih.End(status.Offset, status.Length, 0, int(status.Error))
-	  } else {
-		  audit.Logf("id:%d mismatch on the error...", status.Id)
-	  }
-      if err != nil {
-        audit.Logf("id:%d completion failed: %v", status.Id, err)
-        return true, err // Completed, but Failed. Internal HSM state is not updated
-      }
-    }
+		// Don't .End cancels -- they have no file descriptors to close
+		if (action.Handle().Action() != llapi.HsmActionCancel) {
+		  err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+		  if errors.Is(err, syscall.EBUSY) {
+			  // Received an inexplicable ebusy -- retry
+			  audit.Logf("id:%d completion failed: %v. Retrying.", status.Id, err)
+			  err = action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+		  } else {
+			  if err != nil {
+				  audit.Logf("id:%d mismatch on error: %v.", status.Id, err)
+			  }
+		  }
+		  if err != nil {
+			audit.Logf("id:%d completion failed: %v", status.Id, err)
+			return true, err // Completed, but Failed. Internal HSM state is not updated
+		  }
+		}
 		return true, nil // Completed
 	}
 	err := action.aih.Progress(status.Offset, status.Length, action.aih.Length(), 0)
