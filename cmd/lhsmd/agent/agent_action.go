@@ -168,10 +168,6 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 			  // Received an inexplicable ebusy -- retry
 			  audit.Logf("id:%d completion failed: %v. Retrying.", status.Id, err)
 			  err = action.aih.End(status.Offset, status.Length, 0, int(status.Error))
-		  } else {
-			  if err != nil {
-				  audit.Logf("id:%d mismatch on error: %v.", status.Id, err)
-			  }
 		  }
 		  if err != nil {
 			audit.Logf("id:%d completion failed: %v", status.Id, err)
