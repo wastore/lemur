@@ -163,6 +163,7 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 		action.agent.stats.CompleteAction(action, int(status.Error))
 		// Don't .End cancels -- they have no file descriptors to close
 		if (action.Handle().Action() != llapi.HsmActionCancel) {
+	      debug.Printf("Calling llapi_hsm_action_end!")
 		  err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
 		  if errors.Is(err, syscall.EBUSY) {
 			  // Received an inexplicable ebusy -- retry

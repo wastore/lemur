@@ -27,6 +27,7 @@ import (
 	"unsafe"
 
 	"github.com/wastore/go-lustre"
+	"github.com/intel-hpdd/logging/debug"
 )
 
 // HsmCopytoolPrivate is an opaque value representing the connection to the coordinator.
@@ -247,6 +248,7 @@ func HsmActionEnd(hcap **HsmCopyActionPrivate, offset, length int64, flags, errV
 		&extent,
 		C.int(flags),
 		C.int(errVal))
+	debug.Printf("Return from C.llapi_hsm_action_end: rc=%v err=%v\n", rc, err)
 	return isError(rc, err)
 }
 

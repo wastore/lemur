@@ -162,7 +162,7 @@ func (ct *HsmAgent) handleActions(tag string) {
 			// The actual cancel needs to be processed in the mover, however.
 			isCancel = true
 		}
-		
+
 
 		aih, err := ai.Begin(0, isCancel)
 		if err != nil {
