@@ -167,7 +167,7 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 		  err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
 		  if errors.Is(err, syscall.EBUSY) {
 			  audit.Logf("id:%d completion failed due to possible data change. Assume completed: %v.", status.Id, err)
-			  reeturn true, nil
+			  return true, nil
 		  }
 		  if err != nil {
 			audit.Logf("id:%d completion failed: %v", status.Id, err)
