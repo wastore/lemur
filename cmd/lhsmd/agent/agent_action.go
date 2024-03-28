@@ -166,9 +166,8 @@ func (action *Action) Update(status *pb.ActionStatus) (bool, error) {
 	      debug.Printf("Calling llapi_hsm_action_end!")
 		  err := action.aih.End(status.Offset, status.Length, 0, int(status.Error))
 		  if errors.Is(err, syscall.EBUSY) {
-			  // Received an inexplicable ebusy -- retry
-			  audit.Logf("id:%d completion failed: %v. Retrying.", status.Id, err)
-			  err = action.aih.End(status.Offset, status.Length, 0, int(status.Error))
+			  audit.Logf("id:%d completion failed due to possible data change. Assume completed: %v.", status.Id, err)
+			  reeturn true, nil
 		  }
 		  if err != nil {
 			audit.Logf("id:%d completion failed: %v", status.Id, err)
