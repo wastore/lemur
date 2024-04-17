@@ -35,10 +35,12 @@ import (
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
-	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
+	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"golang.org/x/sys/unix"
 )
+
+const KV_URL_FIELD_COUNT int = 4
 
 var authFailureError = []bloberror.Code{
 	bloberror.AuthenticationFailed,
@@ -84,10 +86,54 @@ func ShouldRefreshCreds(err error) bool {
 	return (respErr.StatusCode == http.StatusForbidden)
 }
 
+// Extract the base uri from the key vault URL
+//
+// Key Vault Object Identifiers have the format
+// https://{vault-name}.vault.azure.net/{object-type}/{object-name}/{object-version}
+//
+// Where the {vault-name} has the following restrictions:
+//   Vault name must be a 3-24 character string,
+//   containing only 0-9, a-z, A-Z, and not consecutive -.
+//
+// Therefore extraction of the baseUri from the key vault
+// URL only requires removal of the vault name from the host.
+//
+// https://learn.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates
+func GetKvBaseUri(kvURL string) (string, error) {
+	parsedKvUrl, err := url.Parse(kvURL)
+	if err != nil {
+		return "", err
+	}
+
+	urlScheme := parsedKvUrl.Scheme
+	if urlScheme != "https" {
+		return "", fmt.Errorf("Invalid URL scheme. Got '%s'. Expected 'https'. URL: %s", urlScheme, kvURL)
+	}
+
+	urlHost := parsedKvUrl.Host
+	hostFragments := strings.Split(urlHost, ".")
+	if len(hostFragments) != KV_URL_FIELD_COUNT {
+		return "", fmt.Errorf("Invalid URL host. Got '%s'. Expected format {vault-name}.vault.{mid-domain}.{top-domain}", urlHost)
+	}
+
+	baseUri := url.URL{
+		Scheme: urlScheme,
+		Host:   strings.Join(hostFragments[1:], "."),
+	}
+
+	return baseUri.String(), nil
+}
+
+
 // GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
 // Uses MSI auth to login
 func GetKVSecret(kvURL, kvSecretName string) (secret string, err error) {
-	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
+	baseUri, err := GetKvBaseUri(kvURL)
+	if err != nil {
+		return "", fmt.Errorf("Failed to extract kvBaseUri from kvUrl(%v): %w", kvURL, err)
+	}
+
+	authorizer, err := auth.NewAuthorizerFromEnvironmentWithResource(baseUri)
 	if err != nil {
 		return "", err
 	}
