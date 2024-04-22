@@ -32,13 +32,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/intel-hpdd/logging/debug"
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
-	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
-	"github.com/Azure/go-autorest/autorest/azure/auth"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"golang.org/x/sys/unix"
 )
+	//"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
+	//"github.com/Azure/go-autorest/autorest/azure/auth"
 
 const KV_URL_FIELD_COUNT int = 4
 
@@ -100,6 +103,8 @@ func ShouldRefreshCreds(err error) bool {
 //
 // https://learn.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates
 func GetKvBaseUri(kvURL string) (string, error) {
+	debug.Printf("GetKvBaseUri called with %v\n", kvURL)
+
 	parsedKvUrl, err := url.Parse(kvURL)
 	if err != nil {
 		return "", err
@@ -128,30 +133,37 @@ func GetKvBaseUri(kvURL string) (string, error) {
 // GetKVSecret returns string secret by name 'kvSecretName' in keyvault 'kvName'
 // Uses MSI auth to login
 func GetKVSecret(kvURL, kvSecretName string) (secret string, err error) {
-	baseUri, err := GetKvBaseUri(kvURL)
-	if err != nil {
-		return "", fmt.Errorf("Failed to extract kvBaseUri from kvUrl(%v): %w", kvURL, err)
+	uami_id := os.Getenv("HSM_COMMON_KEY_VAULT_CLIENT_ID")
+	if uami_id == "" {
+		return "", fmt.Errorf("Failed to find 'HSM_COMMON_KEY_VAULT_CLIENT_ID' environment variable\n")
 	}
 
-	authorizer, err := auth.NewAuthorizerFromEnvironmentWithResource(baseUri)
+	debug.Printf("Creating NewManagedIdentityCredential\n")
+	clientId := azidentity.ClientID(uami_id)
+	opts := azidentity.ManagedIdentityCredentialOptions{ID: clientId}
+	cred, err := azidentity.NewManagedIdentityCredential(&opts)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("azidentity.NewDefaultAzureCredential failed: %w", err)
 	}
 
-	basicClient := keyvault.New()
-	basicClient.Authorizer = authorizer
-
-	ctx, _ := context.WithTimeout(context.Background(), 3*time.Minute)
-	secretResp, err := basicClient.GetSecret(ctx, kvURL, kvSecretName, "")
+	client, err := azsecrets.NewClient(kvURL, cred, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("azsecrets.NewClient failed to create new client for key-vault '%s': %w", kvURL, err)
+	}
+
+	// Empty version string gets the latest version of a secret
+	//ctx, _:= context.WithTimeoutCause(context.Background(), 3*time.Minute, context.DeadlineExceeded)
+	debug.Printf("Attempting to get Key Vault Secret form kvURL: %s\n", kvURL)
+	version := ""
+	secretResp, err := client.GetSecret(context.TODO(), kvSecretName, version, nil)
+	if err != nil {
+		return "", fmt.Errorf("Failed to get key vault secret: %w", err)
 	}
 
 	secret = *secretResp.Value
 	if secret[0] == '?' {
 		secret = secret[1:]
 	}
-
 	return secret, nil
 }
 
