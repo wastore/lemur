@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	stddbg "runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -383,9 +382,13 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 					alert.Warnf("Request limit reached. Failing action %s, command %d", action.PrimaryPath(), action.item.Op)
 					atomic.AddUint32(&dm.requestOverflowCount, 1)
 					if atomic.LoadUint32(&dm.requestOverflowCount) >= requestOverflowLimit {
-						/* Going to panic so set runtime to dump all goroutines */
-						stddbg.SetTraceback("all")
-						panic("Too many Copytool Busy Errors. Panicking...")
+						/*
+						 * Need to terminate parent process instead of panicking since there
+						 * is no clean restart plugin logic in the main copytool.
+						 *
+						 * Sending SIGTERM to the parent will shutdown this process as well.
+						 */
+						syscall.Kill(os.Getppid(), syscall.SIGTERM)
 					}
 					action.Finish(util.CopytoolBusy)
 				}
