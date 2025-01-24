@@ -33,6 +33,10 @@ type ArchiveOptions struct {
 	GetNewStorageClients  func(string) (*container.Client, *blockblob.Client, error)
 }
 
+const (
+	BlobNameMax int = 1024
+)
+
 func (a *ArchiveOptions) getUploadOptions(filepath string) (*blockblob.UploadFileOptions, error) {
 	meta := make(map[string]*string)
 
@@ -87,6 +91,14 @@ func Archive(ctx context.Context, copier copier.Copier, o ArchiveOptions) (int64
 
 	util.Log(pipeline.LogInfo, fmt.Sprintf("Archiving %s", logPath))
 	wg := sync.WaitGroup{}
+
+	// I Think we just care about bytes and not runes
+	if len(o.BlobName) > BlobNameMax {
+		err := fmt.Errorf("Archive path for %s exceeds blob name max of %v characters.",
+			logPath, BlobNameMax)
+		util.Log(pipeline.LogError, fmt.Sprintf("%v", err))
+		return 0, err
+	}
 
 	parents := strings.Split(o.BlobName, string(os.PathSeparator))
 	parents = parents[:len(parents)-1] // Exclude the file itself (processed separately)
