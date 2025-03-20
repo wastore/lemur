@@ -395,6 +395,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 		return errors.Wrap(err, "failed to get container client")
 	}
 
+	debug.Printf("Restoring %s to %s\n", fileKey, action.WritePath())
 	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
 		ContainerURL:           cURL,
 		BlobName:               fileKey,
