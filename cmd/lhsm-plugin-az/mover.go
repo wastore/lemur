@@ -232,13 +232,13 @@ func (m *Mover) SASManager() {
  * If fileID is explicitly provided, return that in a form amenable to be a blob destination, else do a conversion
  * from primary string to path(s) and similarly return as a blob destination
  */
-func (m *Mover) GetFileKey(primaryPath string, fileID string) (string, error) {
+func (m *Mover) GetFileKeys(primaryPath string, fileID string) ([]string, error) {
 
-	var fileKey string
+	var fileKeys []string
 	if len(fileID) == 0 {
 		fnames, err := m.PrimaryStrToPaths(primaryPath)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		if util.ShouldLog(pipeline.LogDebug) {
@@ -246,17 +246,19 @@ func (m *Mover) GetFileKey(primaryPath string, fileID string) (string, error) {
 		}
 
 		if len(fnames) > 1 {
-			util.Log(pipeline.LogDebug, "WARNING: multiple paths returned, using first")
+			util.Log(pipeline.LogDebug, fmt.Sprintf("Multiple paths returned: %s", strings.Join(fnames, ", ")))
 		}
-		fileKey = m.destination(fnames[0])
+		for _, fname := range fnames {
+			fileKeys = append(fileKeys, m.destination(fname))
+		}
 	} else {
-		fileKey = m.destination(fileID)
+		fileKeys = append(fileKeys, m.destination(fileID))
 		if util.ShouldLog(pipeline.LogDebug) {
-			util.Log(pipeline.LogDebug, fmt.Sprintf("Using explicitly provided FileID rather than Path(s) from FS: %s", fileKey))
+			util.Log(pipeline.LogDebug, fmt.Sprintf("Using explicitly provided FileID rather than Path(s) from FS: %s", fileKeys[0]))
 		}
 	}
 
-	return fileKey, nil
+	return fileKeys, nil
 }
 
 func (m *Mover) PrimaryStrToPaths(primaryPath string) ([]string, error) {
@@ -301,26 +303,17 @@ func (m *Mover) GetNewStorageClients(blobpath string) (*container.Client, *block
 }
 
 func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
-	var sourcePath string
-
 	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d archive %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-	fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+	fileKeys, err := m.GetFileKeys(action.PrimaryPath(), action.FileID())
 	if err != nil {
 		return err
 	}
 
-	// If FileID is explicitly given, then we need to call back into GetFileKey to resolve from FID to path for our source
-	// file.  If it is not given, then we've already done this to resolve fileKey, so don't bother doing it again
-	// We only need to do this for archive as delete doesn't need to do anything if FileID is given, and restore relies
-	// upon action.WritePath rather than deriving that from PrimaryPath (FID).
-	sourcePath = fileKey
+	// We no longer support explicitly provided FileID, so if that is provided, we just emit a warning but ignore it
 	if len(action.FileID()) != 0 {
-		sourcePath, err = m.GetFileKey(action.PrimaryPath(), "")
-		if err != nil {
-			return err
-		}
+		util.Log(pipeline.LogWarning, fmt.Sprintf("FileID is provided, but not supported. Using path(s) from FS: %s", strings.Join(fileKeys, ", ")))
 	}
 
 	opStartTime := time.Now()
@@ -335,41 +328,47 @@ func (m *Mover) Archive(ctx context.Context, action dmplugin.Action) error {
 		return errors.Wrap(err, "failed to get container client")
 	}
 
-	total, err := core.Archive(ctx, m.copier, core.ArchiveOptions{
-		ContainerURL:          cURL,
-		ResourceSAS:           sas,
-		MountRoot:             m.config.MountRoot,
-		FID:                   action.PrimaryPath(),
-		BlobName:              fileKey,
-		SourcePath:            sourcePath,
-		BlockSize:             m.config.UploadPartSize,
-		ExportPrefix:          m.config.ExportPrefix,
-		HTTPClient:            m.httpClient,
-		OpStartTime:           opStartTime,
-		GetNewStorageClients:  m.GetNewStorageClients,
-	})
+	// Loop through all the file keys and archive them
+	agg_total := int64(0)
+	for _, fileKey := range fileKeys {
+		total, err := core.Archive(ctx, m.copier, core.ArchiveOptions{
+			ContainerURL:          cURL,
+			ResourceSAS:           sas,
+			MountRoot:             m.config.MountRoot,
+			FID:                   action.PrimaryPath(),
+			BlobName:              fileKey,
+			SourcePath:            fileKey,
+			BlockSize:             m.config.UploadPartSize,
+			ExportPrefix:          m.config.ExportPrefix,
+			HTTPClient:            m.httpClient,
+			OpStartTime:           opStartTime,
+			GetNewStorageClients:  m.GetNewStorageClients,
+		})
 
-	if util.ShouldRefreshCreds(err) {
-		util.Log(pipeline.LogError, fmt.Sprintf("Refreshing creds for item %s", action.PrimaryPath()))
-		m.refreshCredential(opStartTime)
+		agg_total += total
+
+		if util.ShouldRefreshCreds(err) {
+			util.Log(pipeline.LogError, fmt.Sprintf("Refreshing creds for item %s", action.PrimaryPath()))
+			m.refreshCredential(opStartTime)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if util.ShouldLog(pipeline.LogDebug) {
+			util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
+				time.Since(opStartTime),
+				action.PrimaryPath(),
+				m.config.Container, fileKey))
+		}
 	}
-
-	if err != nil {
-		return err
-	}
-
-	if util.ShouldLog(pipeline.LogDebug) {
-		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s to %s/%s", m.name, action.ID(), total,
+	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s (link count of %d)", m.name, action.ID(), agg_total,
 			time.Since(opStartTime),
-			action.PrimaryPath(),
-			m.config.Container, fileKey))
-	} else {
-		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Archived %d bytes in %v from %s", m.name, action.ID(), total,
-			time.Since(opStartTime),
-			action.PrimaryPath()))
-	}
+			action.PrimaryPath(), len(fileKeys)))
 
-	action.SetActualLength(total)
+
+	action.SetActualLength(agg_total)
 	return nil
 }
 
@@ -378,7 +377,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d restore %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-	fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+	fileKeys, err := m.GetFileKeys(action.PrimaryPath(), action.FileID())
 	if err != nil {
 		return err
 	}
@@ -397,7 +396,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 
 	contentLen, err := core.Restore(ctx, m.copier, core.RestoreOptions{
 		ContainerURL:           cURL,
-		BlobName:               fileKey,
+		BlobName:               fileKeys[0],
 		DestinationPath:        action.WritePath(),
 		BlockSize:              m.config.UploadPartSize,
 		ExportPrefix:           m.config.ExportPrefix,
@@ -417,7 +416,7 @@ func (m *Mover) Restore(ctx context.Context, action dmplugin.Action) error {
 	if util.ShouldLog(pipeline.LogDebug) {
 		util.Log(pipeline.LogDebug, fmt.Sprintf("%s id:%d Restored %d bytes in %v from %s to %s", m.name, action.ID(), contentLen,
 			time.Since(opStartTime),
-			fileKey,
+			fileKeys[0],
 			action.PrimaryPath()))
 	} else {
 		util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d Restored %d bytes in %v to %s", m.name, action.ID(), contentLen,
@@ -435,7 +434,7 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 	util.Log(pipeline.LogInfo, fmt.Sprintf("%s id:%d remove %s", m.name, action.ID(), action.PrimaryPath()))
 	rate.Mark(1)
 
-	fileKey, err := m.GetFileKey(action.PrimaryPath(), action.FileID())
+	fileKeys, err := m.GetFileKeys(action.PrimaryPath(), action.FileID())
 	if err != nil {
 		return err
 	}
@@ -454,7 +453,7 @@ func (m *Mover) Remove(ctx context.Context, action dmplugin.Action) error {
 
 	err = core.Remove(ctx, core.RemoveOptions{
 		ContainerURL: cURL,
-		BlobName:     fileKey,
+		BlobName:     fileKeys[0],
 		ExportPrefix: m.config.ExportPrefix,
 	})
 
