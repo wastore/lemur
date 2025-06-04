@@ -386,9 +386,11 @@ func (dm *DataMoverClient) processActions(ctx context.Context) chan *dmAction {
 						 * Need to terminate parent process instead of panicking since there
 						 * is no clean restart plugin logic in the main copytool.
 						 *
-						 * Sending SIGTERM to the parent will shutdown this process as well.
+						 * Sending SIGKILL to the parent will shutdown this process
+						 * as well. SIGKILL is used instead of SIGTERM due to the possibility
+						 * of the parent process hanging during clean shutdown.
 						 */
-						syscall.Kill(os.Getppid(), syscall.SIGTERM)
+						syscall.Kill(os.Getppid(), syscall.SIGKILL)
 					}
 					action.Finish(util.CopytoolBusy)
 				}
