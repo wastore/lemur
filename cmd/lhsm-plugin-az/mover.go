@@ -101,7 +101,7 @@ func AzMover(cfg *archiveConfig, archiveID uint32) *Mover {
 	// Set an attribution tag for all HTTP operations sent from this client
 	// Use the DebugTransport in place of the http.Transprot to see the
 	// request headers before they go over the wire
-	clientOptions.Telemetry = policy.TelemetryOptions{ApplicationID: "APN/1.0-MS_Azure/AMLFS", Disabled: false}
+	clientOptions.Telemetry = policy.TelemetryOptions{ApplicationID: "APN/1.0 MS/1.0 AMLFS/1.0", Disabled: false}
 
 	return &Mover{
 		name:            fmt.Sprintf("az-%d", archiveID),
