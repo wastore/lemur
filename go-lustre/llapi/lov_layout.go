@@ -48,6 +48,10 @@ struct lu_fid *_lov_user_ost_fid(struct lov_user_ost_data *luod) {
         return &luod->l_ost_oi.oi_fid;
 }
 
+__u32 _lov_user_ost_data_get_gen(struct lov_user_ost_data *luod) {
+	return luod->l_ost_gen;
+}
+
 */
 import "C"
 
@@ -116,7 +120,7 @@ func layoutFromLum(lum *C.struct_lov_user_md_v1) (*DataLayout, error) {
 			if cobj == nil {
 				break
 			}
-			o.Gen = int(cobj.l_ost_gen)
+			o.Gen = int(C._lov_user_ost_data_get_gen(cobj))
 			o.Index = int(cobj.l_ost_idx)
 			cfid := C._lov_user_ost_fid(cobj)
 			o.Object = *fromCFid(cfid)
@@ -213,7 +217,7 @@ func FileOpenPool(name string, flags int, mode uint32, layout *DataLayout) (int,
 		defer C.free(unsafe.Pointer(cPoolName))
 	}
 
-	fd, err := C.llapi_file_open_pool(cName, C.int(flags), C.int(mode), C.ulonglong(layout.StripeSize), C.int(layout.StripeOffset), C.int(layout.StripeCount), C.int(layout.StripePattern), cPoolName)
+	fd, err := C.llapi_file_open_pool(cName, C.int(flags), C.int(mode), C.ulonglong(layout.StripeSize), C.int(layout.StripeOffset), C.int(layout.StripeCount), uint32(layout.StripePattern), cPoolName)
 	if err := isError(fd, err); err != nil {
 		return 0, err
 	}
